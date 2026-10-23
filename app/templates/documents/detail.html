@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+
+{% block title %}{{ doc.title }} - TrustVault{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <a href="{{ url_for('documents.list_documents') }}" style="color: var(--text-muted); text-decoration: none; font-size: 0.95rem;">
+        &larr; Back to Documents Vault
+    </a>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1.25rem; margin-bottom: 1.5rem;">
+        <div>
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.35rem;">
+                <h1 style="font-size: 1.75rem;">{{ doc.title }}</h1>
+                <span style="background-color: #e2e8f0; color: #334155; font-size: 0.85rem; padding: 0.2rem 0.6rem; border-radius: 4px; font-weight: 600;">
+                    Version {{ doc.version }}
+                </span>
+            </div>
+            {% if doc.description %}
+            <p style="color: var(--text-muted); font-size: 1rem;">{{ doc.description }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+            {% if can_download %}
+            <a href="{{ url_for('documents.download', doc_id=doc.id) }}" style="background-color: #059669; color: white; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 0.95rem;">
+                Download File
+            </a>
+            {% endif %}
+
+            {% if can_edit %}
+            <a href="{{ url_for('documents.edit', doc_id=doc.id) }}" style="background-color: var(--primary); color: white; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 0.95rem;">
+                Edit Document
+            </a>
+            {% endif %}
+
+            {% if can_manage_access %}
+            <a href="{{ url_for('sharing.manage_access', doc_id=doc.id) }}" style="background-color: #6366f1; color: white; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 600; text-decoration: none; font-size: 0.95rem;">
+                Manage Access
+            </a>
+            {% endif %}
+
+            {% if can_delete %}
+            <form method="POST" action="{{ url_for('documents.delete', doc_id=doc.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this document?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" style="background-color: #ef4444; color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
+                    Delete
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Metadata Grid -->
+    <h3 style="font-size: 1.15rem; margin-bottom: 1rem;">Document Information</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1.25rem;">
+        <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+            <span style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">
+                Filename
+            </span>
+            <span style="font-weight: 500; word-break: break-all;">{{ doc.filename }}</span>
+        </div>
+
+        <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+            <span style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">
+                File Size
+            </span>
+            <span style="font-weight: 500;">{{ (doc.size / 1024)|round(1) }} KB ({{ doc.size }} bytes)</span>
+        </div>
+
+        <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+            <span style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">
+                MIME Type
+            </span>
+            <span style="font-weight: 500;">{{ doc.mime_type }}</span>
+        </div>
+
+        <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+            <span style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">
+                Uploaded By
+            </span>
+            <span style="font-weight: 500;">{{ doc.owner.username if doc.owner else 'Unknown' }}</span>
+        </div>
+
+        <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+            <span style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">
+                Created Date
+            </span>
+            <span style="font-weight: 500;">{{ doc.created_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</span>
+        </div>
+
+        <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+            <span style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">
+                Last Modified
+            </span>
+            <span style="font-weight: 500;">{{ doc.updated_at.strftime('%Y-%m-%d %H:%M:%S UTC') }}</span>
+        </div>
+    </div>
+
+    <!-- Integrity Hash -->
+    <div style="margin-top: 1.5rem; background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem;">
+        <span style="font-size: 0.8rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; display: block; margin-bottom: 0.25rem;">
+            SHA-256 Cryptographic Hash
+        </span>
+        <code style="background-color: #e2e8f0; padding: 0.3rem 0.5rem; border-radius: 4px; font-size: 0.85rem; word-break: break-all; display: inline-block;">
+            {{ doc.sha256 }}
+        </code>
+    </div>
+</div>
+{% endblock %}

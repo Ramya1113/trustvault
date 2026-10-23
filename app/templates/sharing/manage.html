@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Access - {{ doc.title }} - TrustVault{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 1.5rem;">
+    <a href="{{ url_for('documents.detail', doc_id=doc.id) }}" style="color: var(--text-muted); text-decoration: none; font-size: 0.95rem;">
+        &larr; Back to Document Details
+    </a>
+</div>
+
+<div class="card" style="margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+        <div>
+            <h1 style="font-size: 1.75rem; margin-bottom: 0.25rem;">Manage Access</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+                Document: <strong>{{ doc.title }}</strong> &bull; Tenant: <strong>{{ current_user.organization.name }}</strong>
+            </p>
+        </div>
+        <div>
+            <span style="background-color: #e2e8f0; color: #334155; font-size: 0.85rem; padding: 0.25rem 0.6rem; border-radius: 4px; font-weight: 600;">
+                Owner: {{ doc.owner.username }}
+            </span>
+        </div>
+    </div>
+
+    <!-- Active Grants Table -->
+    <h3 style="font-size: 1.2rem; margin-bottom: 1rem;">Active Access Grants</h3>
+    {% if active_grants %}
+    <div style="border: 1px solid var(--border-color); border-radius: 6px; overflow-x: auto; margin-bottom: 2rem;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem;">
+            <thead>
+                <tr style="background-color: #f1f5f9; border-bottom: 1px solid var(--border-color);">
+                    <th style="padding: 0.75rem 1rem; font-weight: 600;">Colleague</th>
+                    <th style="padding: 0.75rem 1rem; font-weight: 600;">Role</th>
+                    <th style="padding: 0.75rem 1rem; font-weight: 600;">Permission Level</th>
+                    <th style="padding: 0.75rem 1rem; font-weight: 600;">Granted By</th>
+                    <th style="padding: 0.75rem 1rem; text-align: right; font-weight: 600;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for grant in active_grants %}
+                <tr style="border-bottom: 1px solid var(--border-color);">
+                    <td style="padding: 0.75rem 1rem; font-weight: 500;">
+                        {{ grant.user.username }}
+                        <small style="color: var(--text-muted); display: block; font-size: 0.8rem;">{{ grant.user.email }}</small>
+                    </td>
+                    <td style="padding: 0.75rem 1rem;">
+                        <span style="background-color: #e2e8f0; font-size: 0.75rem; padding: 0.15rem 0.45rem; border-radius: 4px; text-transform: uppercase;">
+                            {{ grant.user.role }}
+                        </span>
+                    </td>
+                    <td style="padding: 0.75rem 1rem;">
+                        <form method="POST" action="{{ url_for('sharing.change_permission', doc_id=doc.id, grant_id=grant.id) }}" style="display: flex; align-items: center; gap: 0.5rem;">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <select name="permission" style="padding: 0.35rem 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; font-size: 0.85rem;">
+                                <option value="read" {% if grant.permission == 'read' %}selected{% endif %}>Read</option>
+                                <option value="edit" {% if grant.permission == 'edit' %}selected{% endif %}>Edit</option>
+                            </select>
+                            <button type="submit" style="background-color: #e2e8f0; color: #1e293b; border: 1px solid #cbd5e1; padding: 0.35rem 0.65rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">
+                                Change
+                            </button>
+                        </form>
+                    </td>
+                    <td style="padding: 0.75rem 1rem; color: var(--text-muted); font-size: 0.85rem;">
+                        {{ grant.granter.username if grant.granter else 'Admin' }}
+                    </td>
+                    <td style="padding: 0.75rem 1rem; text-align: right;">
+                        <form method="POST" action="{{ url_for('sharing.revoke_access', doc_id=doc.id, grant_id=grant.id) }}" style="display: inline;" onsubmit="return confirm('Revoke access for {{ grant.user.username }}?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" style="background-color: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; padding: 0.35rem 0.75rem; border-radius: 4px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+                                Revoke
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="background-color: #f8fafc; border: 1px dashed var(--border-color); border-radius: 6px; padding: 1.5rem; text-align: center; color: var(--text-muted); margin-bottom: 2rem;">
+        No colleagues currently have active shared access to this document.
+    </div>
+    {% endif %}
+
+    <!-- Grant Access Section -->
+    <h3 style="font-size: 1.2rem; margin-bottom: 0.5rem;">Grant Access to a Colleague</h3>
+    <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem;">
+        Grant read or edit access to other members of <strong>{{ current_user.organization.name }}</strong>.
+    </p>
+
+    {% if eligible_users_count > 0 %}
+    <form method="POST" action="{{ url_for('sharing.grant_access', doc_id=doc.id) }}" novalidate style="max-width: 500px;">
+        {{ grant_form.hidden_tag() }}
+
+        <div style="margin-bottom: 1.25rem;">
+            <label for="user_id" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ grant_form.user_id.label }}
+            </label>
+            {{ grant_form.user_id(
+                id="user_id",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem; background-color: white;"
+            ) }}
+            {% if grant_form.user_id.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ grant_form.user_id.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label for="permission" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ grant_form.permission.label }}
+            </label>
+            {{ grant_form.permission(
+                id="permission",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem; background-color: white;"
+            ) }}
+            {% if grant_form.permission.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ grant_form.permission.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div>
+            {{ grant_form.submit(
+                style="background-color: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: 6px; font-size: 0.95rem; font-weight: 600; cursor: pointer;"
+            ) }}
+        </div>
+    </form>
+    {% else %}
+    <div style="background-color: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem; color: var(--text-muted); font-size: 0.9rem;">
+        All eligible members of {{ current_user.organization.name }} already have active access or are the document owner.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

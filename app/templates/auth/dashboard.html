@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - TrustVault{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; margin-bottom: 1.5rem;">
+        <div>
+            <h1 style="font-size: 1.5rem;">Welcome, {{ current_user.username }}</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+                Organization: <strong>{{ current_user.organization.name }}</strong>
+            </p>
+        </div>
+        <div>
+            <span class="brand-badge" style="background-color: #0284c7; padding: 0.35rem 0.75rem; font-size: 0.85rem;">
+                Role: {{ current_user.role|capitalize }}
+            </span>
+        </div>
+    </div>
+
+    <div style="background-color: var(--info-bg); border: 1px solid #bfdbfe; border-radius: 6px; padding: 1.25rem; color: var(--info-text); margin-bottom: 1.5rem;">
+        <h3 style="margin-bottom: 0.25rem; font-size: 1.1rem;">Tenant Isolation Active</h3>
+        <p style="font-size: 0.95rem;">
+            You are securely logged into <strong>{{ current_user.organization.name }}</strong> (Tenant ID #{{ current_user.org_id }}).
+            All documents, permissions, and audit logs are isolated strictly within this organization.
+        </p>
+    </div>
+
+    <div style="display: flex; gap: 1rem;">
+        <a href="{{ url_for('auth.logout') }}" style="display: inline-block; background-color: var(--card-bg); color: var(--danger-text); border: 1px solid #fca5a5; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 500; text-decoration: none;">
+            Sign Out
+        </a>
+    </div>
+</div>
+{% endblock %}

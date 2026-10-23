@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block title %}User Management - {{ current_user.organization.name }} - TrustVault{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h1 style="font-size: 1.75rem; margin-bottom: 0.25rem;">Organization Users</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+                Manage members and access roles for <strong>{{ current_user.organization.name }}</strong>.
+            </p>
+        </div>
+        <div>
+            <a href="{{ url_for('admin.audit_log') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-main); padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 500; margin-right: 0.5rem;">View Audit Trail</a>
+            <a href="{{ url_for('admin.documents_list') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-main); padding: 0.5rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 500;">Org Documents</a>
+        </div>
+    </div>
+
+    <!-- Create User Card -->
+    <div class="card" style="margin-bottom: 2rem;">
+        <h2 style="font-size: 1.25rem; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border-color);">
+            Add New Member
+        </h2>
+        <form method="POST" action="{{ url_for('admin.create_user') }}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; align-items: flex-end;">
+            {{ create_form.hidden_tag() }}
+
+            <div>
+                <label for="username" style="display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 0.25rem;">
+                    Username
+                </label>
+                {{ create_form.username(style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.9rem;", placeholder="e.g. john_doe") }}
+            </div>
+
+            <div>
+                <label for="email" style="display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 0.25rem;">
+                    Email Address
+                </label>
+                {{ create_form.email(style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.9rem;", placeholder="john@example.com") }}
+            </div>
+
+            <div>
+                <label for="password" style="display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 0.25rem;">
+                    Password (min 10 chars)
+                </label>
+                {{ create_form.password(style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.9rem;", placeholder="At least 10 characters") }}
+            </div>
+
+            <div>
+                <label for="role" style="display: block; font-weight: 500; font-size: 0.9rem; margin-bottom: 0.25rem;">
+                    Role
+                </label>
+                {{ create_form.role(style="width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.9rem; background: white;") }}
+            </div>
+
+            <div>
+                {{ create_form.submit(style="width: 100%; background-color: var(--primary); color: white; border: none; padding: 0.65rem 1.25rem; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.95rem;") }}
+            </div>
+        </form>
+    </div>
+
+    <!-- Users Roster Card -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="padding: 1.25rem 1.5rem; background-color: #fafbfc; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="font-size: 1.15rem; margin: 0;">Member Roster ({{ users|length }})</h2>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color); background-color: #f1f5f9; color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase;">
+                        <th style="padding: 0.85rem 1.25rem;">User</th>
+                        <th style="padding: 0.85rem 1.25rem;">Email</th>
+                        <th style="padding: 0.85rem 1.25rem;">Role</th>
+                        <th style="padding: 0.85rem 1.25rem;">Status</th>
+                        <th style="padding: 0.85rem 1.25rem;">Joined</th>
+                        <th style="padding: 0.85rem 1.25rem; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr style="border-bottom: 1px solid var(--border-color); background-color: {{ 'white' if u.is_active else '#f8fafc' }}; opacity: {{ '1' if u.is_active else '0.75' }};">
+                        <td style="padding: 1rem 1.25rem;">
+                            <strong>{{ u.username }}</strong>
+                            {% if u.id == current_user.id %}
+                                <span style="background-color: #e2e8f0; color: #334155; font-size: 0.75rem; padding: 0.15rem 0.4rem; border-radius: 4px; margin-left: 0.35rem;">You</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 1rem 1.25rem; color: var(--text-muted);">
+                            {{ u.email }}
+                        </td>
+                        <td style="padding: 1rem 1.25rem;">
+                            {% if u.role == 'admin' %}
+                                <span style="background-color: #dbeafe; color: #1e40af; padding: 0.2rem 0.55rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">Admin</span>
+                            {% elif u.role == 'owner' %}
+                                <span style="background-color: #fef3c7; color: #92400e; padding: 0.2rem 0.55rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">Owner</span>
+                            {% else %}
+                                <span style="background-color: #f1f5f9; color: #475569; padding: 0.2rem 0.55rem; border-radius: 12px; font-size: 0.8rem; font-weight: 600;">Viewer</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 1rem 1.25rem;">
+                            {% if u.is_active %}
+                                <span style="color: #059669; font-weight: 600; font-size: 0.85rem;">&bull; Active</span>
+                            {% else %}
+                                <span style="color: #dc2626; font-weight: 600; font-size: 0.85rem;">&bull; Deactivated</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 1rem 1.25rem; color: var(--text-muted); font-size: 0.85rem;">
+                            {{ u.created_at.strftime('%Y-%m-%d') if u.created_at else 'N/A' }}
+                        </td>
+                        <td style="padding: 1rem 1.25rem; text-align: right;">
+                            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; align-items: center; flex-wrap: wrap;">
+                                <!-- Role Change Form -->
+                                <form method="POST" action="{{ url_for('admin.change_user_role', user_id=u.id) }}" style="display: inline-flex; gap: 0.35rem; align-items: center;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <select name="role" style="padding: 0.35rem 0.5rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 4px; background: white;">
+                                        <option value="viewer" {% if u.role == 'viewer' %}selected{% endif %}>Viewer</option>
+                                        <option value="owner" {% if u.role == 'owner' %}selected{% endif %}>Owner</option>
+                                        <option value="admin" {% if u.role == 'admin' %}selected{% endif %}>Admin</option>
+                                    </select>
+                                    <button type="submit" style="background-color: white; border: 1px solid var(--border-color); padding: 0.35rem 0.65rem; border-radius: 4px; font-size: 0.85rem; cursor: pointer;">
+                                        Update
+                                    </button>
+                                </form>
+
+                                <!-- Deactivate / Reactivate Form -->
+                                <form method="POST" action="{{ url_for('admin.toggle_user_status', user_id=u.id) }}" style="display: inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    {% if u.is_active %}
+                                        <button type="submit" style="background-color: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 0.35rem 0.65rem; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: 500;" onclick="return confirm('Deactivate user {{ u.username }}?');">
+                                            Deactivate
+                                        </button>
+                                    {% else %}
+                                        <button type="submit" style="background-color: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; padding: 0.35rem 0.65rem; border-radius: 4px; font-size: 0.85rem; cursor: pointer; font-weight: 500;">
+                                            Reactivate
+                                        </button>
+                                    {% endif %}
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}TrustVault{% endblock %}</title>
+    <style>
+        :root {
+            --bg-color: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --border-color: #e2e8f0;
+            --success-bg: #ecfdf5;
+            --success-text: #065f46;
+            --warning-bg: #fffbeb;
+            --warning-text: #92400e;
+            --danger-bg: #fef2f2;
+            --danger-text: #991b1b;
+            --info-bg: #eff6ff;
+            --info-text: #1e40af;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        header {
+            background-color: var(--card-bg);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            text-decoration: none;
+            color: var(--text-main);
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+
+        .brand-badge {
+            background-color: var(--primary);
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        nav a {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 1.25rem;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: color 0.15s ease-in-out;
+        }
+
+        nav a:hover {
+            color: var(--primary);
+        }
+
+        main {
+            flex: 1;
+            max-width: 1000px;
+            width: 100%;
+            margin: 2rem auto;
+            padding: 0 1.5rem;
+        }
+
+        .flash-messages {
+            margin-bottom: 1.5rem;
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 6px;
+            font-size: 0.95rem;
+            margin-bottom: 0.75rem;
+            border: 1px solid transparent;
+        }
+
+        .alert-success {
+            background-color: var(--success-bg);
+            color: var(--success-text);
+            border-color: #a7f3d0;
+        }
+
+        .alert-warning {
+            background-color: var(--warning-bg);
+            color: var(--warning-text);
+            border-color: #fde68a;
+        }
+
+        .alert-danger {
+            background-color: var(--danger-bg);
+            color: var(--danger-text);
+            border-color: #fecaca;
+        }
+
+        .alert-info {
+            background-color: var(--info-bg);
+            color: var(--info-text);
+            border-color: #bfdbfe;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        footer {
+            border-top: 1px solid var(--border-color);
+            padding: 1.5rem 2rem;
+            text-align: center;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            background-color: var(--card-bg);
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header>
+        <a href="/" class="brand">
+            <span>TrustVault</span>
+            <span class="brand-badge">Tenant Secure</span>
+        </a>
+        <nav>
+            {% block nav_links %}
+            {% if current_user.is_authenticated %}
+                <span style="color: var(--text-muted); font-size: 0.9rem; margin-right: 0.5rem;">
+                    {{ current_user.username }} ({{ current_user.organization.name }})
+                </span>
+                <a href="{{ url_for('documents.list_documents') }}">Documents</a>
+                {% if current_user.role == 'admin' %}
+                    <a href="{{ url_for('admin.users_list') }}">Users</a>
+                    <a href="{{ url_for('admin.documents_list') }}">Org Documents</a>
+                    <a href="{{ url_for('admin.audit_log') }}">Audit Trail</a>
+                {% endif %}
+                <a href="{{ url_for('auth.dashboard') }}">Dashboard</a>
+                <a href="{{ url_for('auth.logout') }}">Sign Out</a>
+            {% else %}
+                <a href="{{ url_for('auth.login') }}">Sign In</a>
+                <a href="{{ url_for('auth.register') }}">Register</a>
+            {% endif %}
+            <a href="/healthz">Health</a>
+            {% endblock %}
+        </nav>
+    </header>
+
+    <main>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ category if category != 'message' else 'info' }}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}
+        <div class="card">
+            <h1>Welcome to TrustVault</h1>
+            <p>Secure multi-tenant document sharing platform.</p>
+        </div>
+        {% endblock %}
+    </main>
+
+    <footer>
+        <p>&copy; TrustVault &bull; Secure Multi-Tenant Document Sharing Platform</p>
+    </footer>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

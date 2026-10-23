@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Trail - {{ current_user.organization.name }} - TrustVault{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <!-- Page Header & Verify Action -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h1 style="font-size: 1.75rem; margin-bottom: 0.25rem;">Cryptographic Audit Trail</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+                Tamper-evident, hash-chained log for <strong>{{ current_user.organization.name }}</strong>.
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <a href="{{ url_for('admin.users_list') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-main); padding: 0.55rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 500;">Users</a>
+            <a href="{{ url_for('admin.documents_list') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-main); padding: 0.55rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 500;">Org Documents</a>
+
+            <!-- Verify Chain Button Form -->
+            <form method="POST" action="{{ url_for('admin.verify_audit_chain') }}" style="display: inline;">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" style="background-color: #059669; color: white; border: none; padding: 0.55rem 1.15rem; border-radius: 6px; font-size: 0.9rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 0.35rem;">
+                    <span>&#x2714;</span> Verify Chain
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Verification Result Banner (if just verified) -->
+    {% if verification_status %}
+        {% if verification_status.ok %}
+            <div style="background-color: var(--success-bg); border: 1px solid #a7f3d0; color: var(--success-text); padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; display: flex; align-items: center; justify-content: space-between;">
+                <div>
+                    <strong style="font-size: 1.05rem;">Chain Verification Passed: OK</strong>
+                    <p style="font-size: 0.9rem; margin-top: 0.25rem;">
+                        All cryptographic SHA-256 hashes match and the hash chain links are 100% authentic and unbroken.
+                    </p>
+                </div>
+                <span style="background-color: #059669; color: white; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700;">VERIFIED OK</span>
+            </div>
+        {% else %}
+            <div style="background-color: var(--danger-bg); border: 1px solid #fecaca; color: var(--danger-text); padding: 1rem 1.25rem; border-radius: 8px; margin-bottom: 1.5rem;">
+                <strong style="font-size: 1.05rem;">Chain Verification FAILED: Compromised at Entry #{{ verification_status.broken_id }}</strong>
+                <p style="font-size: 0.9rem; margin-top: 0.25rem;">
+                    A cryptographic hash mismatch was detected at entry #{{ verification_status.broken_id }}.
+                    The audit trail has been tampered with or entries were removed out of order.
+                </p>
+            </div>
+        {% endif %}
+    {% endif %}
+
+    <!-- Filter Card -->
+    <div class="card" style="margin-bottom: 1.5rem; padding: 1.25rem;">
+        <form method="GET" action="{{ url_for('admin.audit_log') }}" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; align-items: flex-end;">
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.25rem;">Action</label>
+                <select name="action" style="width: 100%; padding: 0.5rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; background: white;">
+                    <option value="">All Actions</option>
+                    {% for act in distinct_actions %}
+                        <option value="{{ act }}" {% if current_filters.action == act %}selected{% endif %}>{{ act }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.25rem;">Actor</label>
+                <select name="actor_id" style="width: 100%; padding: 0.5rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; background: white;">
+                    <option value="">All Actors</option>
+                    {% for u in org_users %}
+                        <option value="{{ u.id }}" {% if current_filters.actor_id == u.id|string %}selected{% endif %}>{{ u.username }} ({{ u.role }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.25rem;">Outcome</label>
+                <select name="outcome" style="width: 100%; padding: 0.5rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; background: white;">
+                    <option value="">All Outcomes</option>
+                    <option value="allowed" {% if current_filters.outcome == 'allowed' %}selected{% endif %}>Allowed Only</option>
+                    <option value="denied" {% if current_filters.outcome == 'denied' %}selected{% endif %}>Denied Only</option>
+                </select>
+            </div>
+
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.25rem;">Target Type</label>
+                <select name="target_type" style="width: 100%; padding: 0.5rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; background: white;">
+                    <option value="">All Targets</option>
+                    <option value="document" {% if current_filters.target_type == 'document' %}selected{% endif %}>document</option>
+                    <option value="user" {% if current_filters.target_type == 'user' %}selected{% endif %}>user</option>
+                    <option value="access_grant" {% if current_filters.target_type == 'access_grant' %}selected{% endif %}>access_grant</option>
+                    <option value="organization" {% if current_filters.target_type == 'organization' %}selected{% endif %}>organization</option>
+                </select>
+            </div>
+
+            <div>
+                <label style="display: block; font-size: 0.85rem; font-weight: 500; color: var(--text-muted); margin-bottom: 0.25rem;">Search</label>
+                <input type="text" name="q" value="{{ current_filters.q }}" placeholder="Detail, IP, keyword..." style="width: 100%; padding: 0.5rem; font-size: 0.85rem; border: 1px solid var(--border-color); border-radius: 6px;">
+            </div>
+
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" style="flex: 1; background-color: var(--primary); color: white; border: none; padding: 0.55rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">
+                    Filter
+                </button>
+                <a href="{{ url_for('admin.audit_log') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.55rem 0.75rem; border-radius: 6px; text-decoration: none; font-size: 0.85rem; text-align: center;">
+                    Reset
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Audit Table Card -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="padding: 1rem 1.25rem; background-color: #fafbfc; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="font-size: 1.05rem; margin: 0;">Audit Records ({{ entries|length }})</h2>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">Append-Only &bull; SHA-256 Hash Chained</span>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color); background-color: #f1f5f9; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase;">
+                        <th style="padding: 0.65rem 0.85rem;">#</th>
+                        <th style="padding: 0.65rem 0.85rem;">Timestamp (UTC)</th>
+                        <th style="padding: 0.65rem 0.85rem;">Actor</th>
+                        <th style="padding: 0.65rem 0.85rem;">Action</th>
+                        <th style="padding: 0.65rem 0.85rem;">Target</th>
+                        <th style="padding: 0.65rem 0.85rem;">Outcome</th>
+                        <th style="padding: 0.65rem 0.85rem;">IP</th>
+                        <th style="padding: 0.65rem 0.85rem;">Detail</th>
+                        <th style="padding: 0.65rem 0.85rem;">Hash</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in entries %}
+                    <tr style="border-bottom: 1px solid var(--border-color); background-color: {{ '#fff5f5' if e.outcome == 'denied' else 'white' }};">
+                        <td style="padding: 0.75rem 0.85rem; font-family: monospace; color: var(--text-muted);">
+                            {{ e.id }}
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem; white-space: nowrap; color: var(--text-muted); font-size: 0.8rem;">
+                            {{ e.created_at.strftime('%Y-%m-%d %H:%M:%S') if e.created_at else 'N/A' }}
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem;">
+                            {% if e.actor %}
+                                <strong>{{ e.actor.username }}</strong>
+                                <span style="font-size: 0.75rem; color: var(--text-muted);">({{ e.actor.role }})</span>
+                            {% else %}
+                                <em style="color: var(--text-muted);">Anonymous / System</em>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem;">
+                            <code style="background-color: #f1f5f9; padding: 0.15rem 0.35rem; border-radius: 4px; font-size: 0.8rem; font-family: monospace;">{{ e.action }}</code>
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem; color: var(--text-muted); font-size: 0.8rem;">
+                            {% if e.target_type %}
+                                {{ e.target_type }}:{{ e.target_id }}
+                            {% else %}
+                                &mdash;
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem;">
+                            {% if e.outcome == 'allowed' %}
+                                <span style="background-color: #d1fae5; color: #065f46; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 700;">ALLOWED</span>
+                            {% else %}
+                                <span style="background-color: #fee2e2; color: #991b1b; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 700;">DENIED</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem; font-family: monospace; font-size: 0.75rem; color: var(--text-muted);">
+                            {{ e.ip_address or '&mdash;' }}
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem; max-width: 260px; word-break: break-word; font-size: 0.8rem;">
+                            {{ e.detail or '&mdash;' }}
+                        </td>
+                        <td style="padding: 0.75rem 0.85rem; font-family: monospace; font-size: 0.75rem; color: var(--text-muted);" title="Entry Hash: {{ e.entry_hash }} | Prev: {{ e.prev_hash or 'GENESIS' }}">
+                            {{ e.entry_hash[:10] }}&hellip;
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="9" style="padding: 2rem; text-align: center; color: var(--text-muted);">
+                            No audit records found matching the active filters.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

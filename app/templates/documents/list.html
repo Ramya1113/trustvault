@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Documents - TrustVault{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+    <div>
+        <h1 style="font-size: 1.75rem; margin-bottom: 0.25rem;">Documents Vault</h1>
+        <p style="color: var(--text-muted); font-size: 0.95rem;">
+            Organization: <strong>{{ current_user.organization.name }}</strong>
+        </p>
+    </div>
+
+    {% if current_user.role in ['admin', 'owner'] %}
+    <div>
+        <a href="{{ url_for('documents.upload') }}" style="display: inline-block; background-color: var(--primary); color: white; padding: 0.65rem 1.25rem; border-radius: 6px; font-weight: 600; text-decoration: none;">
+            + Upload Document
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Search Form -->
+<div class="card" style="padding: 1rem 1.5rem; margin-bottom: 1.5rem;">
+    <form method="GET" action="{{ url_for('documents.list_documents') }}" style="display: flex; gap: 0.75rem;">
+        <input 
+            type="text" 
+            name="q" 
+            value="{{ search_query }}" 
+            placeholder="Search documents by title..."
+            style="flex: 1; padding: 0.6rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem;"
+        >
+        <button type="submit" style="background-color: var(--primary); color: white; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: 500; cursor: pointer;">
+            Search
+        </button>
+        {% if search_query %}
+        <a href="{{ url_for('documents.list_documents') }}" style="display: flex; align-items: center; color: var(--text-muted); text-decoration: none; padding: 0.6rem 0.85rem; font-size: 0.9rem;">
+            Clear
+        </a>
+        {% endif %}
+    </form>
+</div>
+
+<!-- Document List Table -->
+<div class="card" style="padding: 0; overflow-x: auto;">
+    {% if documents %}
+    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem;">
+        <thead>
+            <tr style="background-color: #f1f5f9; border-bottom: 1px solid var(--border-color);">
+                <th style="padding: 0.85rem 1.25rem; font-weight: 600;">Title</th>
+                <th style="padding: 0.85rem 1rem; font-weight: 600;">Filename</th>
+                <th style="padding: 0.85rem 1rem; font-weight: 600;">Size</th>
+                <th style="padding: 0.85rem 1rem; font-weight: 600;">Version</th>
+                <th style="padding: 0.85rem 1rem; font-weight: 600;">Uploaded By</th>
+                <th style="padding: 0.85rem 1.25rem; text-align: right; font-weight: 600;">Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for doc in documents %}
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 0.85rem 1.25rem; font-weight: 500;">
+                    <a href="{{ url_for('documents.detail', doc_id=doc.id) }}" style="color: var(--primary); text-decoration: none;">
+                        {{ doc.title }}
+                    </a>
+                </td>
+                <td style="padding: 0.85rem 1rem; color: var(--text-muted);">
+                    {{ doc.filename }}
+                </td>
+                <td style="padding: 0.85rem 1rem; color: var(--text-muted);">
+                    {{ (doc.size / 1024)|round(1) }} KB
+                </td>
+                <td style="padding: 0.85rem 1rem;">
+                    <span style="background-color: #e2e8f0; color: #334155; font-size: 0.8rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600;">
+                        v{{ doc.version }}
+                    </span>
+                </td>
+                <td style="padding: 0.85rem 1rem; color: var(--text-muted);">
+                    {{ doc.owner.username if doc.owner else 'Unknown' }}
+                    {% if doc.owner_id == current_user.id %}
+                    <span style="font-size: 0.75rem; color: var(--primary); font-weight: 600;">(You)</span>
+                    {% endif %}
+                </td>
+                <td style="padding: 0.85rem 1.25rem; text-align: right;">
+                    <a href="{{ url_for('documents.detail', doc_id=doc.id) }}" style="color: var(--primary); text-decoration: none; font-weight: 500; margin-right: 0.75rem;">
+                        View
+                    </a>
+                    <a href="{{ url_for('documents.download', doc_id=doc.id) }}" style="color: #059669; text-decoration: none; font-weight: 500;">
+                        Download
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="padding: 3rem 1.5rem; text-align: center; color: var(--text-muted);">
+        <p style="font-size: 1.1rem; margin-bottom: 0.5rem;">No documents found.</p>
+        {% if search_query %}
+        <p style="font-size: 0.9rem;">No results matching "{{ search_query }}". Try clearing your search filter.</p>
+        {% else %}
+        <p style="font-size: 0.9rem;">No documents have been uploaded or shared with you yet.</p>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

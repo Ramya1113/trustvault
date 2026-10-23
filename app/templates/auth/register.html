@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}Register Organization - TrustVault{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 500px; margin: 2rem auto;">
+    <h2 style="margin-bottom: 0.5rem; text-align: center;">Register Organization</h2>
+    <p style="color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; font-size: 0.95rem;">
+        Create a new tenant vault and set up your administrator account
+    </p>
+
+    <form method="POST" action="{{ url_for('auth.register') }}" novalidate>
+        {{ form.hidden_tag() }}
+
+        <div style="margin-bottom: 1.25rem;">
+            <label for="organization_name" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ form.organization_name.label }}
+            </label>
+            {{ form.organization_name(
+                id="organization_name",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem;",
+                placeholder="e.g. Acme Corporation"
+            ) }}
+            {% if form.organization_name.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ form.organization_name.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 1.25rem;">
+            <label for="username" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ form.username.label }}
+            </label>
+            {{ form.username(
+                id="username",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem;",
+                placeholder="Choose an admin username",
+                autocomplete="username"
+            ) }}
+            {% if form.username.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ form.username.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 1.25rem;">
+            <label for="email" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ form.email.label }}
+            </label>
+            {{ form.email(
+                id="email",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem;",
+                placeholder="admin@example.com",
+                autocomplete="email"
+            ) }}
+            {% if form.email.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ form.email.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 1.25rem;">
+            <label for="password" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ form.password.label }}
+            </label>
+            {{ form.password(
+                id="password",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem;",
+                placeholder="At least 10 characters",
+                autocomplete="new-password"
+            ) }}
+            <small style="color: var(--text-muted); display: block; margin-top: 0.25rem; font-size: 0.8rem;">
+                Must be at least 10 characters long.
+            </small>
+            {% if form.password.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ form.password.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 1.5rem;">
+            <label for="password_confirm" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ form.password_confirm.label }}
+            </label>
+            {{ form.password_confirm(
+                id="password_confirm",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem;",
+                placeholder="Re-enter your password",
+                autocomplete="new-password"
+            ) }}
+            {% if form.password_confirm.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ form.password_confirm.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div>
+            {{ form.submit(
+                style="width: 100%; background-color: var(--primary); color: white; border: none; padding: 0.75rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer;"
+            ) }}
+        </div>
+    </form>
+
+    <div style="margin-top: 1.5rem; text-align: center; border-top: 1px solid var(--border-color); padding-top: 1.25rem; font-size: 0.9rem;">
+        <span style="color: var(--text-muted);">Already registered?</span>
+        <a href="{{ url_for('auth.login') }}" style="color: var(--primary); font-weight: 600; text-decoration: none; margin-left: 0.25rem;">
+            Sign in here
+        </a>
+    </div>
+</div>
+{% endblock %}

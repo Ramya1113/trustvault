@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In - TrustVault{% endblock %}
+
+{% block content %}
+<div class="card" style="max-width: 440px; margin: 2rem auto;">
+    <h2 style="margin-bottom: 0.5rem; text-align: center;">Sign In</h2>
+    <p style="color: var(--text-muted); text-align: center; margin-bottom: 1.5rem; font-size: 0.95rem;">
+        Access your organization's secure vault
+    </p>
+
+    <form method="POST" action="{{ url_for('auth.login', next=request.args.get('next')) }}" novalidate>
+        {{ form.hidden_tag() }}
+
+        <div style="margin-bottom: 1.25rem;">
+            <label for="username" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ form.username.label }}
+            </label>
+            {{ form.username(
+                id="username",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem;",
+                placeholder="Enter your username",
+                autocomplete="username"
+            ) }}
+            {% if form.username.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ form.username.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="margin-bottom: 1.25rem;">
+            <label for="password" style="display: block; font-weight: 500; margin-bottom: 0.35rem;">
+                {{ form.password.label }}
+            </label>
+            {{ form.password(
+                id="password",
+                style="width: 100%; padding: 0.65rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem;",
+                placeholder="Enter your password",
+                autocomplete="current-password"
+            ) }}
+            {% if form.password.errors %}
+                <div style="color: var(--danger-text); font-size: 0.85rem; margin-top: 0.3rem;">
+                    {{ form.password.errors[0] }}
+                </div>
+            {% endif %}
+        </div>
+
+        <div style="display: flex; align-items: center; margin-bottom: 1.5rem;">
+            {{ form.remember_me(id="remember_me", style="margin-right: 0.5rem;") }}
+            <label for="remember_me" style="font-size: 0.9rem; color: var(--text-muted); cursor: pointer;">
+                {{ form.remember_me.label.text }}
+            </label>
+        </div>
+
+        <div>
+            {{ form.submit(
+                style="width: 100%; background-color: var(--primary); color: white; border: none; padding: 0.75rem; border-radius: 6px; font-size: 1rem; font-weight: 600; cursor: pointer;"
+            ) }}
+        </div>
+    </form>
+
+    <div style="margin-top: 1.5rem; text-align: center; border-top: 1px solid var(--border-color); padding-top: 1.25rem; font-size: 0.9rem;">
+        <span style="color: var(--text-muted);">Need a new organization vault?</span>
+        <a href="{{ url_for('auth.register') }}" style="color: var(--primary); font-weight: 600; text-decoration: none; margin-left: 0.25rem;">
+            Register here
+        </a>
+    </div>
+</div>
+{% endblock %}

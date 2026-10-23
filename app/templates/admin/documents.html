@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}Org Documents - {{ current_user.organization.name }} - TrustVault{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+    <!-- Page Header -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+            <h1 style="font-size: 1.75rem; margin-bottom: 0.25rem;">Organization Documents</h1>
+            <p style="color: var(--text-muted); font-size: 0.95rem;">
+                Vault repository across all members in <strong>{{ current_user.organization.name }}</strong>.
+            </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <a href="{{ url_for('admin.users_list') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-main); padding: 0.55rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 500;">Users</a>
+            <a href="{{ url_for('admin.audit_log') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-main); padding: 0.55rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 500;">Audit Trail</a>
+            <a href="{{ url_for('documents.upload') }}" style="background-color: var(--primary); color: white; padding: 0.55rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.9rem; font-weight: 600;">+ Upload New</a>
+        </div>
+    </div>
+
+    <!-- Metrics Cards -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div class="card" style="padding: 1.25rem;">
+            <div style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Active Documents</div>
+            <div style="font-size: 1.85rem; font-weight: 700; margin-top: 0.25rem; color: var(--text-main);">{{ total_active }}</div>
+        </div>
+        <div class="card" style="padding: 1.25rem;">
+            <div style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Archived / Deleted</div>
+            <div style="font-size: 1.85rem; font-weight: 700; margin-top: 0.25rem; color: var(--text-muted);">{{ total_deleted }}</div>
+        </div>
+        <div class="card" style="padding: 1.25rem;">
+            <div style="color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase; font-weight: 600;">Vault Storage</div>
+            <div style="font-size: 1.85rem; font-weight: 700; margin-top: 0.25rem; color: var(--primary);">
+                {% if total_storage_bytes < 1024 %}
+                    {{ total_storage_bytes }} B
+                {% elif total_storage_bytes < 1048576 %}
+                    {{ (total_storage_bytes / 1024)|round(1) }} KB
+                {% else %}
+                    {{ (total_storage_bytes / 1048576)|round(2) }} MB
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="card" style="margin-bottom: 1.5rem; padding: 1.25rem;">
+        <form method="GET" action="{{ url_for('admin.documents_list') }}" style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+            <div style="flex: 1; min-width: 250px;">
+                <input type="text" name="q" value="{{ search_q }}" placeholder="Search documents by title, description, or filename..." style="width: 100%; padding: 0.6rem 0.85rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 0.95rem;">
+            </div>
+
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <label style="display: flex; align-items: center; gap: 0.35rem; font-size: 0.9rem; color: var(--text-main); cursor: pointer;">
+                    <input type="checkbox" name="show_deleted" value="1" {% if show_deleted %}checked{% endif %} onchange="this.form.submit()">
+                    Show Deleted
+                </label>
+            </div>
+
+            <div style="display: flex; gap: 0.5rem;">
+                <button type="submit" style="background-color: var(--primary); color: white; border: none; padding: 0.6rem 1.25rem; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.95rem;">
+                    Search
+                </button>
+                <a href="{{ url_for('admin.documents_list') }}" style="background-color: white; border: 1px solid var(--border-color); color: var(--text-muted); padding: 0.6rem 1rem; border-radius: 6px; text-decoration: none; font-size: 0.95rem;">
+                    Reset
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Documents Table -->
+    <div class="card" style="padding: 0; overflow: hidden;">
+        <div style="padding: 1rem 1.5rem; background-color: #fafbfc; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="font-size: 1.15rem; margin: 0;">Repository Documents ({{ documents|length }})</h2>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 0.95rem;">
+                <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color); background-color: #f1f5f9; color: var(--text-muted); font-size: 0.85rem; text-transform: uppercase;">
+                        <th style="padding: 0.85rem 1.25rem;">Title &amp; Filename</th>
+                        <th style="padding: 0.85rem 1.25rem;">Owner</th>
+                        <th style="padding: 0.85rem 1.25rem;">Size</th>
+                        <th style="padding: 0.85rem 1.25rem;">Ver</th>
+                        <th style="padding: 0.85rem 1.25rem;">Status</th>
+                        <th style="padding: 0.85rem 1.25rem;">Created</th>
+                        <th style="padding: 0.85rem 1.25rem; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for doc in documents %}
+                    <tr style="border-bottom: 1px solid var(--border-color); background-color: {{ '#fff5f5' if doc.is_deleted else 'white' }};">
+                        <td style="padding: 1rem 1.25rem;">
+                            {% if doc.is_deleted %}
+                                <span style="font-weight: 600; color: var(--text-muted); text-decoration: line-through;">{{ doc.title }}</span>
+                            {% else %}
+                                <a href="{{ url_for('documents.detail', doc_id=doc.id) }}" style="font-weight: 600; color: var(--primary); text-decoration: none;">
+                                    {{ doc.title }}
+                                </a>
+                            {% endif %}
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
+                                {{ doc.filename }} &bull; {{ doc.mime_type }}
+                            </div>
+                        </td>
+                        <td style="padding: 1rem 1.25rem;">
+                            <strong>{{ doc.owner.username }}</strong>
+                            <div style="font-size: 0.8rem; color: var(--text-muted);">{{ doc.owner.role.capitalize() }}</div>
+                        </td>
+                        <td style="padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--text-muted);">
+                            {% if doc.size < 1024 %}
+                                {{ doc.size }} B
+                            {% elif doc.size < 1048576 %}
+                                {{ (doc.size / 1024)|round(1) }} KB
+                            {% else %}
+                                {{ (doc.size / 1048576)|round(2) }} MB
+                            {% endif %}
+                        </td>
+                        <td style="padding: 1rem 1.25rem;">
+                            <span style="background-color: #f1f5f9; padding: 0.15rem 0.45rem; border-radius: 4px; font-size: 0.8rem; font-weight: 600;">v{{ doc.version }}</span>
+                        </td>
+                        <td style="padding: 1rem 1.25rem;">
+                            {% if doc.is_deleted %}
+                                <span style="background-color: #fee2e2; color: #991b1b; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 700;">DELETED</span>
+                            {% else %}
+                                <span style="background-color: #ecfdf5; color: #065f46; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 0.75rem; font-weight: 700;">ACTIVE</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--text-muted); white-space: nowrap;">
+                            {{ doc.created_at.strftime('%Y-%m-%d') if doc.created_at else 'N/A' }}
+                        </td>
+                        <td style="padding: 1rem 1.25rem; text-align: right; white-space: nowrap;">
+                            {% if not doc.is_deleted %}
+                                <a href="{{ url_for('documents.detail', doc_id=doc.id) }}" style="color: var(--primary); text-decoration: none; font-size: 0.85rem; font-weight: 500; margin-right: 0.75rem;">View</a>
+                                <a href="{{ url_for('documents.download', doc_id=doc.id) }}" style="color: var(--text-main); text-decoration: none; font-size: 0.85rem; font-weight: 500; margin-right: 0.75rem;">Download</a>
+                                <a href="{{ url_for('sharing.manage_access', doc_id=doc.id) }}" style="color: #059669; text-decoration: none; font-size: 0.85rem; font-weight: 500; margin-right: 0.75rem;">Share</a>
+                                <a href="{{ url_for('documents.edit', doc_id=doc.id) }}" style="color: var(--text-muted); text-decoration: none; font-size: 0.85rem; font-weight: 500;">Edit</a>
+                            {% else %}
+                                <span style="color: var(--text-muted); font-size: 0.8rem; font-style: italic;">Archived</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" style="padding: 2rem; text-align: center; color: var(--text-muted);">
+                            No documents found in the organization repository.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
