@@ -127,6 +127,17 @@ def register():
 
         # Automatically log the new admin in
         login_user(user)
+
+        # Record registration in the organization's audit trail (genesis block)
+        log_event(
+            actor=user,
+            action="auth.register",
+            target_type="organization",
+            target_id=org.id,
+            outcome="allowed",
+            detail=f"Registered organization '{org.name}' with initial administrator '{user.username}'"
+        )
+
         flash(f"Organization '{org.name}' created successfully! You are signed in as Admin.", "success")
         return redirect(url_for('auth.dashboard'))
 
