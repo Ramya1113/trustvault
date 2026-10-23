@@ -5,8 +5,10 @@ This module initializes and configures the Flask application instance using
 the application factory pattern (create_app).
 """
 import os
+import hashlib
+from datetime import datetime, timezone
 import click
-from flask import Flask, jsonify
+from flask import Flask, jsonify, redirect, url_for
 from config import Config
 from extensions import db, login_manager, csrf
 
@@ -24,6 +26,18 @@ def create_app(config_class=Config):
     """
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # Ensure SECRET_KEY from environment is applied
+    env_secret = os.environ.get('SECRET_KEY')
+    if env_secret:
+        app.config['SECRET_KEY'] = env_secret
+
+    # Ensure DATABASE_URL from environment is applied with postgresql:// dialect fix
+    env_db_url = os.environ.get('DATABASE_URL')
+    if env_db_url:
+        if env_db_url.startswith('postgres://'):
+            env_db_url = env_db_url.replace('postgres://', 'postgresql://', 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = env_db_url
 
     # Initialize extensions with the application instance
     db.init_app(app)
@@ -62,11 +76,173 @@ def create_app(config_class=Config):
         db.create_all()
         click.echo("Initialized database tables successfully.")
 
+    # CLI command: flask seed-db (and alias flask seed)
+    def _execute_seed():
+        """Creates a demo organization with one admin, one owner, one viewer, and prints credentials."""
+        from app.models import Organization, User, Document, AccessGrant
+        from app.audit import log_event
+
+        db.create_all()
+
+        demo_org_name = "Acme Corporation"
+        org = Organization.query.filter_by(name=demo_org_name).first()
+
+        if org is None:
+            org = Organization(name=demo_org_name)
+            db.session.add(org)
+            db.session.flush()
+
+        # Demo credentials dictionary
+        demo_accounts = [
+            {
+                'role': 'admin',
+                'username': 'demo_admin',
+                'email': 'admin@acme.demo',
+                'password': 'AdminPassword123!',
+                'description': 'Full tenant administration, user management, and audit inspection'
+            },
+            {
+                'role': 'owner',
+                'username': 'demo_owner',
+                'email': 'owner@acme.demo',
+                'password': 'OwnerPassword123!',
+                'description': 'Uploads documents and delegates read/edit sharing permissions'
+            },
+            {
+                'role': 'viewer',
+                'username': 'demo_viewer',
+                'email': 'viewer@acme.demo',
+                'password': 'ViewerPassword123!',
+                'description': 'Read-only access strictly to documents explicitly shared with them'
+            }
+        ]
+
+        created_users = {}
+
+        for acc in demo_accounts:
+            user = User.query.filter_by(username=acc['username']).first()
+            if user is None:
+                user = User(
+                    org_id=org.id,
+                    username=acc['username'],
+                    email=acc['email'],
+                    role=acc['role'],
+                    is_active=True,
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                )
+                user.set_password(acc['password'])
+                db.session.add(user)
+                db.session.flush()
+
+                # Audit log user creation
+                log_event(
+                    actor=user,
+                    action="user.seed",
+                    target_type="user",
+                    target_id=user.id,
+                    outcome="allowed",
+                    detail=f"Seeded demo account '{user.username}' with role '{user.role}'",
+                    org_id=org.id
+                )
+            created_users[acc['role']] = user
+
+        # Create sample document owned by demo_owner
+        owner_user = created_users.get('owner')
+        viewer_user = created_users.get('viewer')
+
+        if owner_user:
+            doc = Document.query.filter_by(title="Welcome to TrustVault Guide", org_id=org.id).first()
+            if doc is None:
+                doc_bytes = (
+                    b"%PDF-1.4\n% TrustVault Multi-Tenant Document Sharing System\n"
+                    b"Welcome to TrustVault! This sample document is stored as a BLOB in PostgreSQL/SQLite.\n"
+                    b"Strict multi-tenancy ensures data never crosses organization boundaries.\n%%EOF"
+                )
+                doc = Document(
+                    org_id=org.id,
+                    owner_id=owner_user.id,
+                    title="Welcome to TrustVault Guide",
+                    description="Official platform welcome guide and multi-tenant security overview.",
+                    filename="welcome_guide.pdf",
+                    mime_type="application/pdf",
+                    size=len(doc_bytes),
+                    sha256=hashlib.sha256(doc_bytes).hexdigest(),
+                    data=doc_bytes,
+                    version=1,
+                    created_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                )
+                db.session.add(doc)
+                db.session.flush()
+
+                log_event(
+                    actor=owner_user,
+                    action="document.seed",
+                    target_type="document",
+                    target_id=doc.id,
+                    outcome="allowed",
+                    detail=f"Seeded sample document '{doc.title}'",
+                    org_id=org.id
+                )
+
+                # Grant read access to demo_viewer
+                if viewer_user:
+                    grant = AccessGrant(
+                        document_id=doc.id,
+                        user_id=viewer_user.id,
+                        permission='read',
+                        granted_by=owner_user.id,
+                        created_at=datetime.now(timezone.utc).replace(tzinfo=None)
+                    )
+                    db.session.add(grant)
+                    db.session.flush()
+
+                    log_event(
+                        actor=owner_user,
+                        action="access.grant",
+                        target_type="access_grant",
+                        target_id=grant.id,
+                        outcome="allowed",
+                        detail=f"Seeded read grant on '{doc.title}' for user '{viewer_user.username}'",
+                        org_id=org.id
+                    )
+
+        db.session.commit()
+
+        # Display formatted credentials box
+        banner = "=" * 72
+        divider = "-" * 72
+        click.echo("")
+        click.echo(banner)
+        click.echo("           TrustVault: Demo Environment Seeded Successfully!           ")
+        click.echo(banner)
+        click.echo(f" Organization: {demo_org_name}")
+        click.echo(divider)
+        for acc in demo_accounts:
+            click.echo(f" Role:     {acc['role'].upper()}")
+            click.echo(f" Username: {acc['username']}")
+            click.echo(f" Password: {acc['password']}")
+            click.echo(f" Email:    {acc['email']}")
+            click.echo(f" Access:   {acc['description']}")
+            click.echo(divider)
+        click.echo(" Sample document 'Welcome to TrustVault Guide' is uploaded and shared")
+        click.echo(" with 'demo_viewer' (read-only).")
+        click.echo(banner)
+        click.echo("")
+
+    @app.cli.command('seed-db')
+    def seed_db():
+        """Seed the database with a demo organization, users, and sample document."""
+        _execute_seed()
+
+    @app.cli.command('seed')
+    def seed():
+        """Alias for seed-db: Seed demo organization and users."""
+        _execute_seed()
+
     # Root route: redirects to dashboard if authenticated, or login if guest
     @app.route('/')
     def index():
         from flask_login import current_user
-        from flask import redirect, url_for
         if current_user.is_authenticated:
             return redirect(url_for('auth.dashboard'))
         return redirect(url_for('auth.login'))
