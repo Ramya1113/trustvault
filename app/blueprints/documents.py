@@ -26,6 +26,7 @@ from flask import (
 )
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
+from sqlalchemy.orm import defer
 from extensions import db
 from app.models import Document, AccessGrant
 from app.permissions import can, require
@@ -34,17 +35,44 @@ from app.forms import DocumentUploadForm, DocumentEditForm
 
 docs_bp = Blueprint('documents', __name__, url_prefix='/documents')
 
-# File validation constraints
-ALLOWED_EXTENSIONS = {'pdf', 'docx', 'xlsx', 'txt', 'png', 'jpg', 'jpeg'}
+# File validation constraints & Authoritative extension-to-MIME mapping
+EXTENSION_MIME_MAP = {
+    'pdf': 'application/pdf',
+    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'txt': 'text/plain',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+}
+ALLOWED_EXTENSIONS = set(EXTENSION_MIME_MAP.keys())
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 Megabytes
+
+
+def _get_extension(filename: str) -> str:
+    """Extract lowercase file extension from filename."""
+    if '.' not in filename:
+        return ''
+    return filename.rsplit('.', 1)[-1].lower()
 
 
 def _is_allowed_extension(filename: str) -> bool:
     """Check if the filename has an allowlisted extension."""
-    if '.' not in filename:
-        return False
-    ext = filename.rsplit('.', 1)[-1].lower()
-    return ext in ALLOWED_EXTENSIONS
+    return _get_extension(filename) in ALLOWED_EXTENSIONS
+
+
+def _validate_magic_bytes(ext: str, file_bytes: bytes) -> bool:
+    """
+    Validate magic bytes (file signature) for binary formats: pdf, png, jpg, jpeg.
+    Prevents file extension spoofing (e.g. uploading an executable renamed as .pdf or .png).
+    """
+    if ext == 'pdf':
+        return file_bytes.startswith(b'%PDF-')
+    elif ext == 'png':
+        return file_bytes.startswith(b'\x89PNG\r\n\x1a\n')
+    elif ext in {'jpg', 'jpeg'}:
+        return file_bytes.startswith(b'\xff\xd8\xff')
+    return True
 
 
 def _get_document_or_abort(doc_id: int, action: str):
@@ -118,9 +146,14 @@ def list_documents():
     )
 
     # Base query: strictly scoped to current user's organization and non-deleted
-    base_query = Document.query.filter(
-        Document.org_id == current_user.org_id,
-        Document.deleted_at.is_(None)
+    # defer(Document.data) avoids loading multi-megabyte BLOBs into memory for list views
+    base_query = (
+        Document.query
+        .options(defer(Document.data))
+        .filter(
+            Document.org_id == current_user.org_id,
+            Document.deleted_at.is_(None)
+        )
     )
 
     if current_user.role == 'admin':
@@ -203,11 +236,17 @@ def upload():
             flash("File size exceeds maximum allowed limit of 5 MB.", "danger")
             return render_template('documents/upload.html', form=form)
 
+        # Validate magic bytes against extension
+        ext = _get_extension(filename)
+        if not _validate_magic_bytes(ext, file_bytes):
+            flash("File contents do not match extension (invalid file signature).", "danger")
+            return render_template('documents/upload.html', form=form)
+
         # Compute SHA-256 hash for binary integrity
         sha256_hash = hashlib.sha256(file_bytes).hexdigest()
 
-        # Guess MIME type
-        mime_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+        # Set authoritative MIME type from internal extension map
+        mime_type = EXTENSION_MIME_MAP.get(ext, 'application/octet-stream')
 
         # Create Document record
         doc = Document(
@@ -353,9 +392,14 @@ def edit(doc_id: int):
                 flash("File size exceeds maximum allowed limit of 5 MB.", "danger")
                 return render_template('documents/edit.html', form=form, doc=doc)
 
+            ext = _get_extension(filename)
+            if not _validate_magic_bytes(ext, file_bytes):
+                flash("File contents do not match extension (invalid file signature).", "danger")
+                return render_template('documents/edit.html', form=form, doc=doc)
+
             # Update document content and metadata
             doc.filename = filename
-            doc.mime_type = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+            doc.mime_type = EXTENSION_MIME_MAP.get(ext, 'application/octet-stream')
             doc.size = file_size
             doc.data = file_bytes
             doc.sha256 = hashlib.sha256(file_bytes).hexdigest()

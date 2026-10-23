@@ -13,7 +13,7 @@ Key security and tenancy rules:
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 import threading
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from extensions import db
 from app.models import Organization, User
@@ -174,6 +174,10 @@ def login():
                     outcome="denied",
                     detail=f"Login blocked: account locked for username '{username}'"
                 )
+            else:
+                current_app.logger.warning(
+                    f"Security: Login blocked due to lockout for non-existent username '{username}' from IP {request.remote_addr}"
+                )
             flash(
                 "Account temporarily locked due to too many failed login attempts. "
                 "Please try again in 10 minutes.",
@@ -186,7 +190,7 @@ def login():
 
         # 3. Verify credentials (constant-time password hash check)
         if user is None or not user.check_password(password):
-            # Record failed attempt regardless of whether user exists
+            # Record failed attempt regardless of whether user exists (rate-limiting defense)
             record_failed_attempt(username)
             # Log denied event if user is an existing account
             if user is not None:
@@ -197,6 +201,12 @@ def login():
                     target_id=user.id,
                     outcome="denied",
                     detail=f"Failed login attempt: invalid credentials for '{username}'"
+                )
+            else:
+                # Log failed attempt for unknown username to application security log
+                # (Cannot be stored in tenant audit log because AuditLog requires an org_id)
+                current_app.logger.warning(
+                    f"Security: Failed login attempt for non-existent username '{username}' from IP {request.remote_addr}"
                 )
             # Generic error message: do NOT disclose if username exists
             flash("Invalid username or password.", "danger")

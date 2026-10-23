@@ -28,6 +28,7 @@ from flask import (
     request, abort
 )
 from flask_login import login_required, current_user
+from sqlalchemy.orm import defer
 from extensions import db
 from app.models import User, Document, AuditLog
 from app.permissions import can, require
@@ -456,7 +457,8 @@ def documents_list():
     show_deleted = request.args.get('show_deleted') == '1'
 
     # Base query: strictly scoped to the admin's organization
-    query = Document.query.filter_by(org_id=current_user.org_id)
+    # defer(Document.data) prevents loading large BLOBs when listing documents
+    query = Document.query.options(defer(Document.data)).filter_by(org_id=current_user.org_id)
 
     if not show_deleted:
         query = query.filter_by(deleted_at=None)

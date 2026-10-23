@@ -8,9 +8,10 @@
 
 TrustVault allows organizations (tenants) to store, manage, and securely share confidential documents with complete privacy:
 - **Strict Multi-Tenancy:** Every user belongs to exactly one Organization. No data, queries, or access checks ever cross tenant boundaries.
-- **Centralized Server-Side Authorization:** All authorization rules are strictly evaluated in a single function (`app/permissions.py`). The application never relies on UI button hiding for security.
+- **Centralized Server-Side Authorization:** All authorization rules are strictly evaluated in a single function ([`app/permissions.py`](file:///d:/trustvault/app/permissions.py)). The application never relies on UI button hiding for security.
 - **Tamper-Evident Audit Trail:** Every sensitive action—including **denied access attempts**—is permanently recorded in a cryptographic SHA-256 hash chain that can be validated at any time.
 - **Database BLOB File Storage:** Files are stored directly as binary payloads inside the database (up to 5 MB), guaranteeing atomic transactional commits and eliminating orphaned files.
+- **Memory Optimization:** Binary BLOB data is deferred (`defer(Document.data)`) during document listing and search queries to conserve RAM.
 
 ---
 
@@ -35,41 +36,48 @@ The platform enforces three distinct user roles with strict separation of duties
 
 ## 3. Working Features
 
-- **Authentication & Tenant Onboarding (`app/blueprints/auth.py`):**
+- **Authentication & Tenant Onboarding ([`app/blueprints/auth.py`](file:///d:/trustvault/app/blueprints/auth.py)):**
   - Registration automatically creates a new Organization and makes the registrant its initial `admin`.
   - Passwords require $\ge 10$ characters, securely hashed with Werkzeug (`pbkdf2`/`scrypt`).
   - Brute-force protection: Rate-limiting locks an account for 10 minutes after 5 consecutive failed login attempts (HTTP 429).
-  - Generic error messages prevent username enumeration.
+  - Generic error messages prevent username enumeration on bad login attempts.
+  - Failed logins for unknown usernames trigger rate-limiting identically and are logged to `current_app.logger.warning` with client IP and username without polluting tenant audit logs.
   - Session cookies enforce `HttpOnly` and `SameSite=Lax`.
+  - All state-changing forms enforce Flask-WTF CSRF validation (missing or invalid token returns HTTP 400).
 
-- **Document Management (`app/blueprints/documents.py`):**
+- **Document Management ([`app/blueprints/documents.py`](file:///d:/trustvault/app/blueprints/documents.py)):**
   - Upload allowed only for `admin` and `owner` roles.
   - Strict extension allowlist (`pdf`, `docx`, `xlsx`, `txt`, `png`, `jpg`, `jpeg`).
+  - Filenames sanitized via `secure_filename`.
+  - Magic-byte file signature validation (`%PDF-`, `\x89PNG\r\n\x1a\n`, `\xff\xd8\xff`) prevents file extension spoofing.
+  - Authoritative MIME type mapping (`EXTENSION_MIME_MAP`) overrides client-supplied content types.
   - File size restricted to $\le 5$ MB.
   - Automatic SHA-256 integrity calculation and BLOB storage.
   - Version increments (`v+1`) when replacing document content.
   - Secure downloads serving `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`.
+  - Memory-optimized listing queries utilizing `defer(Document.data)`.
   - Soft-delete archiving (`deleted_at`).
   - Search filter by title, description, or filename.
 
-- **Document Sharing & Access Delegation (`app/blueprints/sharing.py`):**
+- **Document Sharing & Access Delegation ([`app/blueprints/sharing.py`](file:///d:/trustvault/app/blueprints/sharing.py)):**
   - Document owners and admins can delegate `read` or `edit` access to active colleagues in the **same organization**.
   - Cross-tenant grant attempts and duplicate active grants are rejected.
   - Update permissions between `read` and `edit`.
   - Revocation sets `revoked_at` timestamp, taking effect **immediately on the very next request**.
 
-- **Tamper-Evident Audit Logging (`app/audit.py`):**
+- **Tamper-Evident Audit Logging ([`app/audit.py`](file:///d:/trustvault/app/audit.py)):**
   - Append-only database table.
+  - Per-tenant thread locks (`_get_org_lock`) ensure safe concurrent logging across threads.
   - Cryptographic hash chaining: each entry stores `prev_hash` and `entry_hash = SHA-256(prev_hash + org_id + actor_id + action + target + outcome + detail + created_at)`.
   - SQLAlchemy ORM event listeners block all `UPDATE` and `DELETE` operations on audit logs.
   - Cryptographic verification engine (`verify_chain(org_id)`) validates the chain from genesis to latest record and pinpoints any broken entry.
 
-- **Admin Console (`app/blueprints/admin.py`):**
+- **Admin Console ([`app/blueprints/admin.py`](file:///d:/trustvault/app/blueprints/admin.py)):**
   - Member roster: create users with roles (`admin`, `owner`, `viewer`), deactivate/reactivate accounts, change roles.
   - **Safety Rules:** An administrator cannot demote or deactivate the last active admin in the organization.
   - Audit trail viewer with multi-criteria filters (action, actor, outcome, target type, search query).
   - One-click **"Verify Chain"** button with status banner.
-  - Organization-wide document repository with metrics and deleted document viewer.
+  - Organization-wide document repository with metrics and memory-efficient `defer(Document.data)` queries.
 
 - **Health Monitoring:**
   - Health check endpoint at `/healthz` returning `{"status": "ok"}` with HTTP 200.
@@ -109,12 +117,12 @@ The platform enforces three distinct user roles with strict separation of duties
 
 4. **Initialize database tables:**
    ```bash
-   flask init-db
+   flask --app run.py init-db
    ```
 
-5. **Seed demo data (creates Acme Corp with admin, owner, viewer, and sample file):**
+5. **Seed demo data (idempotent, safe to run multiple times):**
    ```bash
-   flask seed
+   flask --app run.py seed
    ```
 
 6. **Start the local development server:**
@@ -127,7 +135,7 @@ The platform enforces three distinct user roles with strict separation of duties
 
 ## 5. Running the Test Suite
 
-TrustVault includes a comprehensive test suite of 167 automated tests covering permissions, authentication, models, document lifecycles, hash chaining, sharing, and integration scenarios:
+TrustVault includes a comprehensive test suite of **188 automated tests** covering permissions, authentication, models, document lifecycles, hash chaining, concurrency, magic bytes, deferred queries, CSRF, sharing, and integration scenarios:
 
 ```bash
 # Run all tests
@@ -138,46 +146,38 @@ pytest -v
 
 # Run specific test modules
 pytest tests/test_permissions.py
-pytest tests/test_integration.py
-pytest tests/test_audit.py
+pytest tests/test_issue3_concurrency.py
+pytest tests/test_issue4_csrf.py
+pytest tests/test_issue5_magic_bytes.py
+pytest tests/test_issue6_defer.py
+pytest tests/test_issue8_unknown_login.py
 ```
 
 ---
 
 ## 6. How to Deploy (Render)
 
-TrustVault is pre-configured for instant deployment on [Render](https://render.com) with [`render.yaml`](file:///d:/trustvault/render.yaml), [`Procfile`](file:///d:/trustvault/Procfile), and [`build.sh`](file:///d:/trustvault/build.sh).
+TrustVault is pre-configured for deployment on [Render](https://render.com) using [`render.yaml`](file:///d:/trustvault/render.yaml), [`Procfile`](file:///d:/trustvault/Procfile), and [`build.sh`](file:///d:/trustvault/build.sh).
 
-### Option A: One-Click Blueprint Deployment (Recommended)
+### Automated Setup via Render Blueprint
 1. Push your repository to GitHub.
 2. In the Render Dashboard, click **New +** $\rightarrow$ **Blueprint**.
 3. Select your repository. Render automatically configures:
    - Web Service with Gunicorn (`gunicorn run:app`)
    - Managed PostgreSQL database (`trustvault-db`)
-   - Environment variables (`SECRET_KEY`, `DATABASE_URL`)
-   - Build command (`./build.sh`, which runs `pip install` and `flask init-db`)
+   - Normalized `DATABASE_URL` handling (`postgres://` automatically translated to `postgresql://`)
+   - Build command (`bash build.sh`, which installs requirements and executes `flask --app run.py init-db`)
+   - Environment variables:
+     - `FLASK_APP=run.py`
+     - `SEED_DEMO=1` (automatically runs idempotent demo seeding during build, ideal since Render free tier does not provide a web shell)
+     - `SECRET_KEY` (auto-generated)
 4. Click **Apply**.
-5. After deployment, open the web service **Shell** tab and run:
-   ```bash
-   flask seed
-   ```
-
-### Option B: Manual Setup
-1. Create a **PostgreSQL** database on Render (`trustvault-db`).
-2. Create a **Web Service** connected to your repository:
-   - **Build Command:** `./build.sh` (or `pip install -r requirements.txt && flask init-db`)
-   - **Start Command:** `gunicorn run:app`
-   - **Environment Variables:**
-     - `DATABASE_URL`: Your PostgreSQL Internal Connection String.
-     - `SECRET_KEY`: A secure random 64-character secret.
-     - `PYTHON_VERSION`: `3.10.9`
-3. In the Render Shell, run `flask seed` to seed demo users.
 
 ---
 
 ## 7. Demo Accounts
 
-The `flask seed` command populates the database with these pre-configured accounts:
+The `flask seed` command (or setting `SEED_DEMO=1`) populates the database with these pre-configured accounts:
 
 | Role | Username | Password | Email | Description |
 | :--- | :--- | :--- | :--- | :--- |
@@ -190,13 +190,19 @@ The `flask seed` command populates the database with these pre-configured accoun
 
 ---
 
-## 8. Known Limitations
+## 8. Known Limitations & Audit-Chain Limits
 
 1. **5 MB File Size Limit:** Files are capped at 5 MB to ensure database BLOB queries remain fast and lightweight.
 2. **Relational Database Storage Only:** Files are stored as SQL BLOBs rather than external object storage (S3/GCS).
 3. **Single Tenant per User:** Users belong to exactly one Organization; multi-organization switching is intentionally not supported.
-4. **In-Memory Login Lockout Tracker:** The rate-limiting tracker resides in application memory and resets on server restart. For multi-node load-balanced deployments, an external cache (e.g. Redis) would replace the in-memory dictionary.
-5. **SQLite Naive Datetimes:** Local SQLite stores dates as strings without timezone offsets; the audit system normalizes timestamps to UTC naive strings (`%Y-%m-%dT%H:%M:%S.%f`) to guarantee identical SHA-256 hash reproduction between local SQLite and production PostgreSQL.
+4. **In-Memory Login Lockout Tracker:** The rate-limiting tracker resides in application memory. In multi-worker load-balanced deployments, an external cache (e.g. Redis) is required.
+5. **Audit-Chain Concurrency Scope:**
+   - Hash calculations are serialized per organization using in-process thread locks (`_get_org_lock`). This prevents race conditions across concurrent threads in a single process.
+   - For multi-process deployments (multiple Gunicorn worker processes) or multi-container clusters, database-level locking (`SELECT ... FOR UPDATE`) or a dedicated single-worker audit queue is required to serialize hash chain calculations across processes.
+6. **Direct SQL Tampering vs. Chain Rewrites:**
+   - The hash chain detects modifications or deletions made to existing records. However, an attacker with full root access to the PostgreSQL database who modifies a row and then recomputes all subsequent entry hashes could produce an internally consistent chain. External anchoring (such as periodic checkpointing to an immutable write-once store) is necessary to defend against full-history rewrites.
+7. **Unknown User Probes:**
+   - Because `AuditLog` requires a non-null tenant `org_id`, failed logins for non-existent usernames are not recorded in tenant audit chains. They are logged to standard application security logs (`current_app.logger.warning`) to avoid polluting tenant logs with external attacker noise.
 
 ---
 
@@ -205,7 +211,7 @@ The `flask seed` command populates the database with these pre-configured accoun
 ### Files Stored Directly in the Database (BLOBs)
 - **Transactional Consistency:** Storing document metadata, version history, and raw binary bytes in the same database table ensures that uploads and edits are completely atomic. If a transaction fails or rolls back, no orphan files linger on disk.
 - **Backup Simplicity:** Database dumps (`pg_dump` or SQLite copy) capture all files, metadata, user permissions, and audit logs simultaneously.
-- **Access Gating:** Files cannot be accessed through static web server URL paths or directory traversals. Every single byte is served through Flask streaming with verified permissions.
+- **Access Gating & Memory Safety:** Files cannot be accessed through static web server URL paths. Every single byte is served through Flask streaming with verified permissions. To prevent memory bloat, `defer(Document.data)` prevents binary payloads from being loaded during roster and search queries.
 
 ### Tamper-Evident Hash Chaining
 - **Cryptographic Auditability:** Rather than relying on standard database logs, TrustVault chains every audit record to the preceding entry using SHA-256 (`prev_hash + data`).
