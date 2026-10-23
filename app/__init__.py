@@ -77,7 +77,7 @@ def create_app(config_class=Config):
         click.echo("Initialized database tables successfully.")
 
     # CLI command: flask seed-db (and alias flask seed)
-    def _execute_seed():
+    def _execute_seed(print_banner=True):
         """Creates a demo organization with one admin, one owner, one viewer, and prints credentials."""
         from app.models import Organization, User, Document, AccessGrant
         from app.audit import log_event
@@ -147,8 +147,8 @@ def create_app(config_class=Config):
             created_users[acc['role']] = user
 
         # Create sample document owned by demo_owner
-        owner_user = created_users.get('owner')
-        viewer_user = created_users.get('viewer')
+        owner_user = created_users.get('owner') or User.query.filter_by(username='demo_owner').first()
+        viewer_user = created_users.get('viewer') or User.query.filter_by(username='demo_viewer').first()
 
         if owner_user:
             doc = Document.query.filter_by(title="Welcome to TrustVault Guide", org_id=org.id).first()
@@ -184,8 +184,14 @@ def create_app(config_class=Config):
                     org_id=org.id
                 )
 
-                # Grant read access to demo_viewer
-                if viewer_user:
+            # Grant read access to demo_viewer if not already active
+            if doc and viewer_user:
+                grant = AccessGrant.query.filter_by(
+                    document_id=doc.id,
+                    user_id=viewer_user.id,
+                    revoked_at=None
+                ).first()
+                if grant is None:
                     grant = AccessGrant(
                         document_id=doc.id,
                         user_id=viewer_user.id,
@@ -208,36 +214,45 @@ def create_app(config_class=Config):
 
         db.session.commit()
 
-        # Display formatted credentials box
-        banner = "=" * 72
-        divider = "-" * 72
-        click.echo("")
-        click.echo(banner)
-        click.echo("           TrustVault: Demo Environment Seeded Successfully!           ")
-        click.echo(banner)
-        click.echo(f" Organization: {demo_org_name}")
-        click.echo(divider)
-        for acc in demo_accounts:
-            click.echo(f" Role:     {acc['role'].upper()}")
-            click.echo(f" Username: {acc['username']}")
-            click.echo(f" Password: {acc['password']}")
-            click.echo(f" Email:    {acc['email']}")
-            click.echo(f" Access:   {acc['description']}")
+        if print_banner:
+            # Display formatted credentials box
+            banner = "=" * 72
+            divider = "-" * 72
+            click.echo("")
+            click.echo(banner)
+            click.echo("           TrustVault: Demo Environment Seeded Successfully!           ")
+            click.echo(banner)
+            click.echo(f" Organization: {demo_org_name}")
             click.echo(divider)
-        click.echo(" Sample document 'Welcome to TrustVault Guide' is uploaded and shared")
-        click.echo(" with 'demo_viewer' (read-only).")
-        click.echo(banner)
-        click.echo("")
+            for acc in demo_accounts:
+                click.echo(f" Role:     {acc['role'].upper()}")
+                click.echo(f" Username: {acc['username']}")
+                click.echo(f" Password: {acc['password']}")
+                click.echo(f" Email:    {acc['email']}")
+                click.echo(f" Access:   {acc['description']}")
+                click.echo(divider)
+            click.echo(" Sample document 'Welcome to TrustVault Guide' is uploaded and shared")
+            click.echo(" with 'demo_viewer' (read-only).")
+            click.echo(banner)
+            click.echo("")
 
     @app.cli.command('seed-db')
     def seed_db():
         """Seed the database with a demo organization, users, and sample document."""
-        _execute_seed()
+        _execute_seed(print_banner=True)
 
     @app.cli.command('seed')
     def seed():
         """Alias for seed-db: Seed demo organization and users."""
-        _execute_seed()
+        _execute_seed(print_banner=True)
+
+    # Auto-seed when SEED_DEMO=1 (e.g. on Render free tier without web shell)
+    if os.environ.get('SEED_DEMO') == '1':
+        with app.app_context():
+            try:
+                _execute_seed(print_banner=False)
+            except Exception as e:
+                app.logger.warning(f"Auto-seeding failed or skipped: {e}")
 
     # Root route: redirects to dashboard if authenticated, or login if guest
     @app.route('/')

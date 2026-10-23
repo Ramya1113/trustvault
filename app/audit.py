@@ -13,9 +13,24 @@ CRITICAL SECURITY REQUIREMENTS:
 
 from datetime import datetime, timezone
 import hashlib
+import threading
 from flask import has_request_context, request
 from extensions import db
 from app.models import AuditLog, User
+
+# Concurrency Control: Per-Organization thread locks
+# Serializes hash calculation and audit log appending per tenant,
+# preventing race conditions where concurrent requests read the same prev_hash.
+_org_locks = {}
+_meta_lock = threading.Lock()
+
+
+def _get_org_lock(org_id: int) -> threading.Lock:
+    """Retrieve or create a thread lock dedicated to a specific organization."""
+    with _meta_lock:
+        if org_id not in _org_locks:
+            _org_locks[org_id] = threading.Lock()
+        return _org_locks[org_id]
 
 
 def compute_entry_hash(prev_hash, org_id, actor_id, action, target_type, target_id,
@@ -104,47 +119,50 @@ def log_event(actor, action: str, target_type=None, target_id=None,
     # 3. Create UTC timestamp (normalized to UTC naive for consistent database storage)
     created_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
-    # 4. Find the previous audit entry within the SAME organization
-    # The chain is scoped per tenant (organization)
-    last_entry = (
-        AuditLog.query
-        .filter_by(org_id=event_org_id)
-        .order_by(AuditLog.id.desc())
-        .first()
-    )
-    prev_hash = last_entry.entry_hash if last_entry else None
+    # 4-6. Acquire per-organization lock to serialize hash chaining and commit
+    org_lock = _get_org_lock(event_org_id)
+    with org_lock:
+        # 4. Find the previous audit entry within the SAME organization
+        # The chain is scoped per tenant (organization)
+        last_entry = (
+            AuditLog.query
+            .filter_by(org_id=event_org_id)
+            .order_by(AuditLog.id.desc())
+            .first()
+        )
+        prev_hash = last_entry.entry_hash if last_entry else None
 
-    # 5. Compute cryptographic SHA-256 hash for this new entry
-    entry_hash = compute_entry_hash(
-        prev_hash=prev_hash,
-        org_id=event_org_id,
-        actor_id=actor_id,
-        action=action,
-        target_type=target_type,
-        target_id=target_id,
-        outcome=outcome,
-        detail=detail,
-        created_at=created_at
-    )
+        # 5. Compute cryptographic SHA-256 hash for this new entry
+        entry_hash = compute_entry_hash(
+            prev_hash=prev_hash,
+            org_id=event_org_id,
+            actor_id=actor_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            outcome=outcome,
+            detail=detail,
+            created_at=created_at
+        )
 
-    # 6. Append entry to the database (Append-Only)
-    entry = AuditLog(
-        org_id=event_org_id,
-        actor_id=actor_id,
-        action=action,
-        target_type=target_type,
-        target_id=target_id,
-        outcome=outcome,
-        ip_address=ip_address,
-        detail=detail,
-        created_at=created_at,
-        prev_hash=prev_hash,
-        entry_hash=entry_hash
-    )
-    db.session.add(entry)
-    db.session.commit()
+        # 6. Append entry to the database (Append-Only)
+        entry = AuditLog(
+            org_id=event_org_id,
+            actor_id=actor_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            outcome=outcome,
+            ip_address=ip_address,
+            detail=detail,
+            created_at=created_at,
+            prev_hash=prev_hash,
+            entry_hash=entry_hash
+        )
+        db.session.add(entry)
+        db.session.commit()
 
-    return entry
+        return entry
 
 
 def verify_chain(org_id: int):
