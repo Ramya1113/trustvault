@@ -1,7 +1,9 @@
+
 services:
   - type: web
     name: trustvault
     runtime: python
+    plan: free
     buildCommand: "bash build.sh"
     startCommand: "gunicorn --workers 1 --threads 4 run:app"
     envVars:
