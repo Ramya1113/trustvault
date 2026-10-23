@@ -40,6 +40,9 @@ The platform enforces three distinct user roles with strict separation of duties
   - Registration automatically creates a new Organization and makes the registrant its initial `admin`.
   - Passwords require $\ge 10$ characters, securely hashed with Werkzeug (`pbkdf2`/`scrypt`).
   - Brute-force protection: Rate-limiting locks an account for 10 minutes after 5 consecutive failed login attempts (HTTP 429).
+  - **Equalized Execution Timing:** Non-existent usernames execute a dummy password hash check (`_DUMMY_PASSWORD_HASH`) to ensure identical server response latency to existing accounts, eliminating timing-based username enumeration.
+  - **Memory Capping & Expiration:** The lockout dictionary automatically expires stale records and is capped at `MAX_LOCKOUT_ENTRIES = 10000` to prevent memory exhaustion DoS.
+  - **Log Injection Defense:** Usernames in security log lines are sanitized against CRLF characters (`\r`, `\n`) and truncated to 64 characters.
   - Generic error messages prevent username enumeration on bad login attempts.
   - Failed logins for unknown usernames trigger rate-limiting identically and are logged to `current_app.logger.warning` with client IP and username without polluting tenant audit logs.
   - Session cookies enforce `HttpOnly` and `SameSite=Lax`.
@@ -49,7 +52,12 @@ The platform enforces three distinct user roles with strict separation of duties
   - Upload allowed only for `admin` and `owner` roles.
   - Strict extension allowlist (`pdf`, `docx`, `xlsx`, `txt`, `png`, `jpg`, `jpeg`).
   - Filenames sanitized via `secure_filename`.
-  - Magic-byte file signature validation (`%PDF-`, `\x89PNG\r\n\x1a\n`, `\xff\xd8\xff`) prevents file extension spoofing.
+  - **Magic-Byte File Signatures:** Binary file signatures verified on upload and edit:
+    - PDF: `b'%PDF-'`
+    - PNG: `b'\x89PNG\r\n\x1a\n'`
+    - JPG/JPEG: `b'\xff\xd8\xff'`
+    - DOCX/XLSX: `b'PK\x03\x04'` (standard OpenXML Zip container signature)
+    - *Note on Plain Text:* Plain text (`.txt`) files contain raw arbitrary plaintext and are intentionally not content-checked against a binary magic number because plain text has no uniform file signature.
   - Authoritative MIME type mapping (`EXTENSION_MIME_MAP`) overrides client-supplied content types.
   - File size restricted to $\le 5$ MB.
   - Automatic SHA-256 integrity calculation and BLOB storage.
@@ -135,7 +143,7 @@ The platform enforces three distinct user roles with strict separation of duties
 
 ## 5. Running the Test Suite
 
-TrustVault includes a comprehensive test suite of **188 automated tests** covering permissions, authentication, models, document lifecycles, hash chaining, concurrency, magic bytes, deferred queries, CSRF, sharing, and integration scenarios:
+TrustVault includes a comprehensive test suite of automated tests organized by behavioral domain:
 
 ```bash
 # Run all tests
@@ -144,13 +152,15 @@ pytest
 # Run with verbose output
 pytest -v
 
-# Run specific test modules
-pytest tests/test_permissions.py
-pytest tests/test_issue3_concurrency.py
-pytest tests/test_issue4_csrf.py
-pytest tests/test_issue5_magic_bytes.py
-pytest tests/test_issue6_defer.py
-pytest tests/test_issue8_unknown_login.py
+# Run specific behavioral test suites
+pytest tests/test_permissions.py          # Authorization matrix (Role x Action x Ownership x Grants)
+pytest tests/test_audit_concurrency.py    # Concurrency-safe hash chaining under multi-threaded load
+pytest tests/test_csrf_protection.py      # CSRF enforcement (token presence and validity)
+pytest tests/test_magic_bytes_upload.py   # Upload extension allowlist and binary magic byte checks
+pytest tests/test_document_defer.py       # Memory optimization verifying BLOB deferral on lists
+pytest tests/test_auth_unknown_login.py   # Timing equalization, log sanitization, and lockout caps
+pytest tests/test_seed_idempotent.py      # Idempotent database seeding and SEED_DEMO=1 triggers
+pytest tests/test_render_config.py        # Production deployment build configs and WSGI entry points
 ```
 
 ---
@@ -159,11 +169,21 @@ pytest tests/test_issue8_unknown_login.py
 
 TrustVault is pre-configured for deployment on [Render](https://render.com) using [`render.yaml`](file:///d:/trustvault/render.yaml), [`Procfile`](file:///d:/trustvault/Procfile), and [`build.sh`](file:///d:/trustvault/build.sh).
 
+### Production Server Architecture: Why `--workers 1 --threads 4`?
+In [`Procfile`](file:///d:/trustvault/Procfile) and [`render.yaml`](file:///d:/trustvault/render.yaml), Gunicorn is explicitly pinned to:
+```bash
+gunicorn --workers 1 --threads 4 run:app
+```
+**Why this design decision?**
+1. **Thread-Safe Cryptographic Audit Serialization:** TrustVault serializes audit log entry creation per organization using in-process Python thread locks (`_get_org_lock`). Running a single worker process ensures all concurrent requests share the same process memory, guaranteeing that `prev_hash` queries and hash chaining are strictly serialized per tenant.
+2. **Shared Brute-Force Rate Limiting:** The failed-login tracker (`_failed_login_attempts`) is maintained in memory. A single worker ensures all authentication attempts hit the same tracking dictionary without requiring an external cache like Redis.
+3. **High Concurrency via Multi-Threading:** Utilizing 4 worker threads allows the application to handle multiple concurrent I/O operations simultaneously (such as file streaming and database queries) with minimal memory footprint on the Render free tier.
+
 ### Automated Setup via Render Blueprint
 1. Push your repository to GitHub.
 2. In the Render Dashboard, click **New +** $\rightarrow$ **Blueprint**.
 3. Select your repository. Render automatically configures:
-   - Web Service with Gunicorn (`gunicorn run:app`)
+   - Web Service with Gunicorn (`gunicorn --workers 1 --threads 4 run:app`)
    - Managed PostgreSQL database (`trustvault-db`)
    - Normalized `DATABASE_URL` handling (`postgres://` automatically translated to `postgresql://`)
    - Build command (`bash build.sh`, which installs requirements and executes `flask --app run.py init-db`)
@@ -195,13 +215,11 @@ The `flask seed` command (or setting `SEED_DEMO=1`) populates the database with 
 1. **5 MB File Size Limit:** Files are capped at 5 MB to ensure database BLOB queries remain fast and lightweight.
 2. **Relational Database Storage Only:** Files are stored as SQL BLOBs rather than external object storage (S3/GCS).
 3. **Single Tenant per User:** Users belong to exactly one Organization; multi-organization switching is intentionally not supported.
-4. **In-Memory Login Lockout Tracker:** The rate-limiting tracker resides in application memory. In multi-worker load-balanced deployments, an external cache (e.g. Redis) is required.
-5. **Audit-Chain Concurrency Scope:**
-   - Hash calculations are serialized per organization using in-process thread locks (`_get_org_lock`). This prevents race conditions across concurrent threads in a single process.
-   - For multi-process deployments (multiple Gunicorn worker processes) or multi-container clusters, database-level locking (`SELECT ... FOR UPDATE`) or a dedicated single-worker audit queue is required to serialize hash chain calculations across processes.
-6. **Direct SQL Tampering vs. Chain Rewrites:**
+4. **Single-Worker Process Model:**
+   - Because audit locks and lockout dictionaries use in-process thread synchronization, running multiple worker processes (`--workers > 1`) across separate OS processes or distributed container instances would require database-level locking (`SELECT ... FOR UPDATE` or advisory locks) and a shared cache (e.g. Redis).
+5. **Direct SQL Tampering vs. Chain Rewrites:**
    - The hash chain detects modifications or deletions made to existing records. However, an attacker with full root access to the PostgreSQL database who modifies a row and then recomputes all subsequent entry hashes could produce an internally consistent chain. External anchoring (such as periodic checkpointing to an immutable write-once store) is necessary to defend against full-history rewrites.
-7. **Unknown User Probes:**
+6. **Unknown User Probes:**
    - Because `AuditLog` requires a non-null tenant `org_id`, failed logins for non-existent usernames are not recorded in tenant audit chains. They are logged to standard application security logs (`current_app.logger.warning`) to avoid polluting tenant logs with external attacker noise.
 
 ---

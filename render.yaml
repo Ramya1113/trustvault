@@ -3,7 +3,7 @@ services:
     name: trustvault
     runtime: python
     buildCommand: "bash build.sh"
-    startCommand: "gunicorn run:app"
+    startCommand: "gunicorn --workers 1 --threads 4 run:app"
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.9

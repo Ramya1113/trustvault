@@ -204,3 +204,87 @@ def test_secure_filename_applied(test_setup):
         assert '/' not in doc.filename
         assert '\\' not in doc.filename
         assert doc.filename == 'etc_passwd.pdf'
+
+
+def test_magic_bytes_valid_docx_and_xlsx(test_setup):
+    """Valid DOCX and XLSX files starting with PK\\x03\\x04 succeed and have correct MIME."""
+    app, org, owner = test_setup
+    client = app.test_client()
+
+    client.post('/auth/login', data={'username': 'docowner', 'password': 'Password123!'})
+
+    # 1. Valid DOCX
+    valid_docx = b"PK\x03\x04\x14\x00\x06\x00...word/document.xml..."
+    resp = client.post('/documents/upload', data={
+        'title': 'Valid Docx',
+        'file': (io.BytesIO(valid_docx), 'brief.docx')
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"uploaded successfully" in resp.data
+
+    with app.app_context():
+        doc = Document.query.filter_by(title='Valid Docx').first()
+        assert doc is not None
+        assert doc.mime_type == EXTENSION_MIME_MAP['docx']
+
+    # 2. Valid XLSX
+    valid_xlsx = b"PK\x03\x04\x14\x00\x06\x00...xl/workbook.xml..."
+    resp = client.post('/documents/upload', data={
+        'title': 'Valid Xlsx',
+        'file': (io.BytesIO(valid_xlsx), 'sheet.xlsx')
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"uploaded successfully" in resp.data
+
+    with app.app_context():
+        doc = Document.query.filter_by(title='Valid Xlsx').first()
+        assert doc is not None
+        assert doc.mime_type == EXTENSION_MIME_MAP['xlsx']
+
+
+def test_magic_bytes_spoofed_docx_and_xlsx_rejected(test_setup):
+    """Spoofed DOCX and XLSX without PK\\x03\\x04 header are rejected."""
+    app, org, owner = test_setup
+    client = app.test_client()
+
+    client.post('/auth/login', data={'username': 'docowner', 'password': 'Password123!'})
+
+    # Fake DOCX (plain text)
+    fake_docx = b"Just plain text masquerading as docx"
+    resp = client.post('/documents/upload', data={
+        'title': 'Fake Docx',
+        'file': (io.BytesIO(fake_docx), 'fake.docx')
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"File contents do not match extension (invalid file signature)." in resp.data
+
+    # Fake XLSX (plain text)
+    fake_xlsx = b"a,b,c\n1,2,3"
+    resp = client.post('/documents/upload', data={
+        'title': 'Fake Xlsx',
+        'file': (io.BytesIO(fake_xlsx), 'fake.xlsx')
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"File contents do not match extension (invalid file signature)." in resp.data
+
+
+def test_txt_file_accepted_without_content_check(test_setup):
+    """Plain text (.txt) files do not have a uniform magic byte and are accepted directly."""
+    app, org, owner = test_setup
+    client = app.test_client()
+
+    client.post('/auth/login', data={'username': 'docowner', 'password': 'Password123!'})
+
+    plain_txt = b"Arbitrary plaintext without any binary magic numbers or header bytes."
+    resp = client.post('/documents/upload', data={
+        'title': 'Plain Text Note',
+        'file': (io.BytesIO(plain_txt), 'notes.txt')
+    }, follow_redirects=True)
+    assert resp.status_code == 200
+    assert b"uploaded successfully" in resp.data
+
+    with app.app_context():
+        doc = Document.query.filter_by(title='Plain Text Note').first()
+        assert doc is not None
+        assert doc.mime_type == 'text/plain'
+        assert doc.data == plain_txt

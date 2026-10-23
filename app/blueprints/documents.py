@@ -63,8 +63,15 @@ def _is_allowed_extension(filename: str) -> bool:
 
 def _validate_magic_bytes(ext: str, file_bytes: bytes) -> bool:
     """
-    Validate magic bytes (file signature) for binary formats: pdf, png, jpg, jpeg.
-    Prevents file extension spoofing (e.g. uploading an executable renamed as .pdf or .png).
+    Validate magic bytes (file signature) for structured binary formats:
+    - pdf: b'%PDF-'
+    - png: b'\\x89PNG\\r\\n\\x1a\\n'
+    - jpg/jpeg: b'\\xff\\xd8\\xff'
+    - docx/xlsx: b'PK\\x03\\x04' (standard OpenXML Zip container signature)
+
+    Plain text (.txt):
+    - Raw plaintext files do not possess a uniform binary magic number and are
+      intentionally NOT content-checked against a signature.
     """
     if ext == 'pdf':
         return file_bytes.startswith(b'%PDF-')
@@ -72,6 +79,8 @@ def _validate_magic_bytes(ext: str, file_bytes: bytes) -> bool:
         return file_bytes.startswith(b'\x89PNG\r\n\x1a\n')
     elif ext in {'jpg', 'jpeg'}:
         return file_bytes.startswith(b'\xff\xd8\xff')
+    elif ext in {'docx', 'xlsx'}:
+        return file_bytes.startswith(b'PK\x03\x04')
     return True
 
 

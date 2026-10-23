@@ -34,3 +34,15 @@ def test_build_sh_configuration():
 
     assert 'export FLASK_APP=run.py' in content
     assert '--app run.py' in content
+
+
+def test_procfile_and_render_yaml_pin_gunicorn_workers_threads():
+    """Confirm Procfile and render.yaml specify --workers 1 --threads 4."""
+    with open('Procfile', 'r') as f:
+        procfile_content = f.read()
+    assert 'gunicorn --workers 1 --threads 4 run:app' in procfile_content
+
+    with open('render.yaml', 'r') as f:
+        render_content = f.read()
+    assert 'startCommand: "gunicorn --workers 1 --threads 4 run:app"' in render_content
+

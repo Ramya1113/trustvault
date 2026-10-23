@@ -15,12 +15,16 @@ from datetime import datetime, timezone, timedelta
 import threading
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
+from werkzeug.security import check_password_hash, generate_password_hash
 from extensions import db
 from app.models import Organization, User
 from app.forms import LoginForm, RegisterForm
 from app.audit import log_event
 
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+# Pre-computed dummy password hash used to equalize execution timing on non-existent usernames
+_DUMMY_PASSWORD_HASH = generate_password_hash("ConstantTimingDummySecretKey123!")
 
 # -----------------------------------------------------------------------------
 # Rate-Limiting & Lockout Tracker
@@ -33,6 +37,39 @@ _lockout_lock = threading.Lock()
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_WINDOW_MINUTES = 10
 LOCKOUT_DURATION = timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
+MAX_LOCKOUT_ENTRIES = 10000
+
+
+def _sanitize_log_input(val: str, max_len: int = 64) -> str:
+    """
+    Sanitize and truncate string input for safe logging.
+    - Strips whitespace.
+    - Escapes carriage returns, newlines, and tabs to prevent CRLF log injection.
+    - Truncates to max_len characters to prevent log buffer exhaustion.
+    """
+    if not val:
+        return ""
+    sanitized = val.strip().replace('\r', '\\r').replace('\n', '\\n').replace('\t', '\\t')
+    if len(sanitized) > max_len:
+        sanitized = sanitized[:max_len] + "..."
+    return sanitized
+
+
+def _cleanup_expired_lockouts_locked(now):
+    """
+    Purge expired lockout entries from _failed_login_attempts.
+    Must be called with _lockout_lock held.
+    """
+    cutoff = now - LOCKOUT_DURATION
+    expired_keys = []
+    for k, timestamps in list(_failed_login_attempts.items()):
+        recent = [t for t in timestamps if t > cutoff]
+        if not recent:
+            expired_keys.append(k)
+        else:
+            _failed_login_attempts[k] = recent
+    for k in expired_keys:
+        _failed_login_attempts.pop(k, None)
 
 
 def is_account_locked(username: str) -> bool:
@@ -49,14 +86,21 @@ def is_account_locked(username: str) -> bool:
     cutoff = now - LOCKOUT_DURATION
 
     with _lockout_lock:
-        # Purge failed attempts older than the 10-minute lockout window
-        _failed_login_attempts[key] = [t for t in _failed_login_attempts[key] if t > cutoff]
-        return len(_failed_login_attempts[key]) >= MAX_FAILED_ATTEMPTS
+        if key not in _failed_login_attempts:
+            return False
+        # Filter attempts within the 10-minute lockout window
+        recent = [t for t in _failed_login_attempts[key] if t > cutoff]
+        if not recent:
+            _failed_login_attempts.pop(key, None)
+            return False
+        _failed_login_attempts[key] = recent
+        return len(recent) >= MAX_FAILED_ATTEMPTS
 
 
 def record_failed_attempt(username: str):
     """
     Record a failed login attempt timestamp for a username.
+    Enforces maximum entry capacity (MAX_LOCKOUT_ENTRIES) and purges expired entries.
     """
     if not username:
         return
@@ -65,9 +109,17 @@ def record_failed_attempt(username: str):
     cutoff = now - LOCKOUT_DURATION
 
     with _lockout_lock:
-        # Keep only recent attempts within the window, then append current attempt
-        _failed_login_attempts[key] = [t for t in _failed_login_attempts[key] if t > cutoff]
-        _failed_login_attempts[key].append(now)
+        # Periodic expiration cleanup when capacity threshold is reached
+        if len(_failed_login_attempts) >= MAX_LOCKOUT_ENTRIES:
+            _cleanup_expired_lockouts_locked(now)
+            # If still at or over capacity, evict the oldest key (FIFO)
+            while len(_failed_login_attempts) >= MAX_LOCKOUT_ENTRIES:
+                oldest_key = next(iter(_failed_login_attempts))
+                _failed_login_attempts.pop(oldest_key, None)
+
+        recent = [t for t in _failed_login_attempts.get(key, []) if t > cutoff]
+        recent.append(now)
+        _failed_login_attempts[key] = recent
 
 
 def clear_failed_attempts(username: str):
@@ -164,6 +216,7 @@ def login():
 
         # 1. Check if the username is currently locked out
         if is_account_locked(username):
+            sanitized_user = _sanitize_log_input(username)
             user = User.query.filter_by(username=username).first()
             if user:
                 log_event(
@@ -172,11 +225,11 @@ def login():
                     target_type="user",
                     target_id=user.id,
                     outcome="denied",
-                    detail=f"Login blocked: account locked for username '{username}'"
+                    detail=f"Login blocked: account locked for username '{sanitized_user}'"
                 )
             else:
                 current_app.logger.warning(
-                    f"Security: Login blocked due to lockout for non-existent username '{username}' from IP {request.remote_addr}"
+                    f"Security: Login blocked due to lockout for non-existent username '{sanitized_user}' from IP {request.remote_addr}"
                 )
             flash(
                 "Account temporarily locked due to too many failed login attempts. "
@@ -188,10 +241,18 @@ def login():
         # 2. Lookup the user
         user = User.query.filter_by(username=username).first()
 
-        # 3. Verify credentials (constant-time password hash check)
-        if user is None or not user.check_password(password):
+        # 3. Verify credentials (constant-time check equalizing execution timing)
+        if user is not None:
+            password_valid = user.check_password(password)
+        else:
+            # Run dummy password-hash check to equalize execution timing across valid/invalid users
+            check_password_hash(_DUMMY_PASSWORD_HASH, password)
+            password_valid = False
+
+        if not password_valid:
             # Record failed attempt regardless of whether user exists (rate-limiting defense)
             record_failed_attempt(username)
+            sanitized_user = _sanitize_log_input(username)
             # Log denied event if user is an existing account
             if user is not None:
                 log_event(
@@ -200,13 +261,13 @@ def login():
                     target_type="user",
                     target_id=user.id,
                     outcome="denied",
-                    detail=f"Failed login attempt: invalid credentials for '{username}'"
+                    detail=f"Failed login attempt: invalid credentials for '{sanitized_user}'"
                 )
             else:
                 # Log failed attempt for unknown username to application security log
                 # (Cannot be stored in tenant audit log because AuditLog requires an org_id)
                 current_app.logger.warning(
-                    f"Security: Failed login attempt for non-existent username '{username}' from IP {request.remote_addr}"
+                    f"Security: Failed login attempt for non-existent username '{sanitized_user}' from IP {request.remote_addr}"
                 )
             # Generic error message: do NOT disclose if username exists
             flash("Invalid username or password.", "danger")
