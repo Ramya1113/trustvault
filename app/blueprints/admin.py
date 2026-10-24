@@ -25,7 +25,7 @@ Authorization & Auditing Rules:
 from datetime import datetime, timezone
 from flask import (
     Blueprint, render_template, redirect, url_for, flash,
-    request, abort
+    request, abort, session
 )
 from flask_login import login_required, current_user
 from sqlalchemy.orm import defer
@@ -382,13 +382,8 @@ def audit_log():
         .all()
     )
 
-    # Check if a verification result was passed in query params
-    verification_status = None
-    if request.args.get('verified') == '1':
-        verification_status = {
-            'ok': request.args.get('valid') == '1',
-            'broken_id': request.args.get('broken_id')
-        }
+    # Retrieve server-side verification status from session (single-use, never trust URL query parameters)
+    verification_status = session.pop('verification_status', None)
 
     return render_template(
         'admin/audit.html',
@@ -427,17 +422,13 @@ def verify_audit_chain():
         detail=f"Cryptographic chain verification completed. Valid={is_valid}, BrokenId={first_broken_id}"
     )
 
-    if is_valid:
-        flash("Audit log chain verified: all records are intact and tamper-evident hashes are valid.", "success")
-    else:
-        flash(f"Audit log integrity compromised: cryptographic chain broken at entry #{first_broken_id}.", "danger")
+    # Store verification result in session (single-use, single banner, never in URL parameters)
+    session['verification_status'] = {
+        'ok': is_valid,
+        'broken_id': first_broken_id
+    }
 
-    return redirect(url_for(
-        'admin.audit_log',
-        verified='1',
-        valid='1' if is_valid else '0',
-        broken_id=first_broken_id or ''
-    ))
+    return redirect(url_for('admin.audit_log'))
 
 
 # -----------------------------------------------------------------------------

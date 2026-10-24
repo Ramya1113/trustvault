@@ -439,6 +439,21 @@ def test_audit_chain_verification_intact_and_tampered(client, setup_admin_data, 
     assert str(tampered_id).encode() in resp_tampered.data
 
 
+def test_audit_url_parameters_cannot_spoof_verification_banner(client, setup_admin_data):
+    """
+    Visiting /admin/audit?verified=1&valid=1 directly via GET must NOT display the
+    verification passed banner. Verification status must come strictly from the server.
+    """
+    login_as(client, "acme_admin1", "AdminPass1234!")
+
+    # Attempt to spoof the verification banner by navigating directly with URL parameters
+    resp = client.get('/admin/audit?verified=1&valid=1')
+    assert resp.status_code == 200
+    assert b"Chain Verification Passed: OK" not in resp.data
+    assert b"VERIFIED OK" not in resp.data
+    assert b"All cryptographic SHA-256 hashes match" not in resp.data
+
+
 # =============================================================================
 # 3. Org-Wide Document List Tests
 # =============================================================================
