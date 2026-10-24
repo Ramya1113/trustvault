@@ -37,9 +37,16 @@ def get_database_uri():
 class Config:
     """Application configuration with environment-driven variables and safe defaults."""
 
+    # Debug mode is explicitly disabled by default in configuration
+    DEBUG = False
+
     # Secret key used for cryptographic signing of session cookies and CSRF tokens.
-    # On Render, set via environment variable SECRET_KEY.
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-insecure-secret-key-change-in-production')
+    # On Render, it must be provided via the environment variable; fallback is disallowed.
+    _is_render = bool(os.environ.get('RENDER'))
+    _secret_key = os.environ.get('SECRET_KEY')
+    if _is_render and not _secret_key:
+        raise ValueError("SECRET_KEY environment variable must be set when running on Render")
+    SECRET_KEY = _secret_key or 'dev-insecure-secret-key-change-in-production'
 
     # Database connection URI
     SQLALCHEMY_DATABASE_URI = get_database_uri()
@@ -53,7 +60,11 @@ class Config:
     # Session cookie security flags
     # HttpOnly prevents client-side scripts from accessing cookies, mitigating XSS risks.
     # SameSite=Lax prevents CSRF in cross-site requests while preserving top-level navigation.
+    # Secure flag ensures cookies are only transmitted over HTTPS (enforced when deployed on Render).
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
+    SESSION_COOKIE_SECURE = _is_render
     REMEMBER_COOKIE_HTTPONLY = True
     REMEMBER_COOKIE_SAMESITE = 'Lax'
+    REMEMBER_COOKIE_SECURE = _is_render
+

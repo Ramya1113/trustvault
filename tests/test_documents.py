@@ -243,7 +243,7 @@ def test_document_listing_and_tenant_isolation(client, setup_data, app):
     assert b"Beta Secret Roadmap" not in resp_admin.data
 
     # 2. Viewer logs in -> sees ONLY shared doc1, NOT doc2 or doc_tenant2
-    client.get('/auth/logout')
+    client.post('/auth/logout')
     login_as(client, "acme_viewer", "ViewerPass1234!")
     resp_viewer = client.get('/documents/')
     assert resp_viewer.status_code == 200

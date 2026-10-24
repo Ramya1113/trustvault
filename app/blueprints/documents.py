@@ -26,7 +26,9 @@ from flask import (
 )
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
+from werkzeug.http import dump_options_header
 from sqlalchemy.orm import defer
+
 from extensions import db
 from app.models import Document, AccessGrant
 from app.permissions import can, require
@@ -342,18 +344,25 @@ def download(doc_id: int):
         detail=f"Downloaded '{doc.filename}' ({doc.size} bytes)"
     )
 
+    # Security headers: sanitize filename against CRLF header injection and quote escaping
+    clean_filename = secure_filename(doc.filename) or 'download'
+    clean_filename = clean_filename.replace('\r', '').replace('\n', '').replace('"', '')
+
     response = send_file(
         io.BytesIO(doc.data),
         mimetype=doc.mime_type,
         as_attachment=True,
-        download_name=doc.filename
+        download_name=clean_filename
     )
 
-    # Security headers required by specification
-    response.headers['Content-Disposition'] = f'attachment; filename="{doc.filename}"'
+
+    response.headers['Content-Disposition'] = f'attachment; filename="{clean_filename}"'
     response.headers['X-Content-Type-Options'] = 'nosniff'
 
     return response
+
+
+
 
 
 @docs_bp.route('/<int:doc_id>/edit', methods=['GET', 'POST'])

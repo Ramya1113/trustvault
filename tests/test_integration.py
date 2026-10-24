@@ -126,7 +126,8 @@ def setup_integration_data(app):
 
 def login_as(client, username, password):
     """Helper to authenticate a user through the login form."""
-    client.get('/auth/logout', follow_redirects=True)
+    client.post('/auth/logout', follow_redirects=True)
+
     return client.post('/auth/login', data={
         'username': username,
         'password': password

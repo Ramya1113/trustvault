@@ -8,7 +8,7 @@ import os
 import hashlib
 from datetime import datetime, timezone
 import click
-from flask import Flask, jsonify, redirect, url_for
+from flask import Flask, jsonify, redirect, render_template, url_for
 from config import Config
 from extensions import db, login_manager, csrf
 
@@ -31,6 +31,14 @@ def create_app(config_class=Config):
     env_secret = os.environ.get('SECRET_KEY')
     if env_secret:
         app.config['SECRET_KEY'] = env_secret
+    elif os.environ.get('RENDER') and not app.config.get('TESTING'):
+        raise ValueError("SECRET_KEY environment variable must be set when running on Render")
+
+    # Enforce cookie security flags when running on Render
+    if os.environ.get('RENDER'):
+        app.config['SESSION_COOKIE_SECURE'] = True
+        app.config['REMEMBER_COOKIE_SECURE'] = True
+
 
     # Ensure DATABASE_URL from environment is applied with postgresql:// dialect fix
     env_db_url = os.environ.get('DATABASE_URL')
@@ -45,13 +53,28 @@ def create_app(config_class=Config):
     csrf.init_app(app)
 
     # User loader for Flask-Login session management
+    # Security Rule: If a user is deactivated, immediately return None so their existing
+    # session cookie is invalidated on the very next request.
     @login_manager.user_loader
     def load_user(user_id):
         from app.models import User
         try:
-            return db.session.get(User, int(user_id))
+            user = db.session.get(User, int(user_id))
+            if user is not None and not user.is_active:
+                return None
+            return user
+
         except (ValueError, TypeError):
             return None
+
+
+    @app.before_request
+    def enforce_active_session():
+        from flask_login import current_user, logout_user
+        if current_user.is_authenticated and not current_user.is_active:
+            logout_user()
+            return redirect(url_for('auth.login'))
+
 
     # Configure Flask-Login defaults
     login_manager.login_view = 'auth.login'
@@ -271,4 +294,40 @@ def create_app(config_class=Config):
         """
         return jsonify(status="ok"), 200
 
+    # Defensive HTTP security headers applied to all responses
+    @app.after_request
+    def set_security_headers(response):
+        """Apply defensive security headers to mitigate XSS, clickjacking, and MIME sniffing."""
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+        response.headers['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "object-src 'none'; "
+            "frame-ancestors 'none';"
+        )
+        return response
+
+
+    # Custom error handlers providing clean error pages without stack traces
+    @app.errorhandler(403)
+    def forbidden_error(error):
+        """Render custom 403 Forbidden page without internal details."""
+        return render_template('errors/403.html'), 403
+
+    @app.errorhandler(404)
+    def not_found_error(error):
+        """Render custom 404 Not Found page without internal details."""
+        return render_template('errors/404.html'), 404
+
+    @app.errorhandler(500)
+    def internal_error(error):
+        """Render custom 500 Internal Server Error page and rollback aborted database transactions."""
+        db.session.rollback()
+        return render_template('errors/500.html'), 500
+
     return app
+

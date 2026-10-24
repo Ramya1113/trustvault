@@ -64,7 +64,7 @@ def test_registration_creates_org_and_admin(client, app):
 
 def test_registration_rejects_short_password(client, app):
     """Verify that passwords shorter than 10 characters are rejected."""
-    client.get('/auth/logout')  # Ensure client is unauthenticated
+    client.post('/auth/logout')  # Ensure client is unauthenticated
     response = client.post('/auth/register', data={
         'organization_name': 'Beta Corp',
         'username': 'beta_admin',
@@ -83,7 +83,7 @@ def test_registration_rejects_short_password(client, app):
 
 def test_registration_rejects_duplicate_org_or_username(client):
     """Verify unique organization names and usernames."""
-    client.get('/auth/logout')  # Ensure unauthenticated
+    client.post('/auth/logout')  # Ensure unauthenticated
 
     # First registration
     client.post('/auth/register', data={
@@ -95,7 +95,7 @@ def test_registration_rejects_duplicate_org_or_username(client):
     }, follow_redirects=True)
 
     # Log out to test registration form validation as a guest
-    client.get('/auth/logout')
+    client.post('/auth/logout')
 
     # Second registration with duplicate org
     resp1 = client.post('/auth/register', data={
@@ -213,8 +213,9 @@ def test_successful_login_and_logout(client, app):
     assert b"session_user (Session Org)" in resp.data
 
     # Logout
-    logout_resp = client.get('/auth/logout', follow_redirects=True)
+    logout_resp = client.post('/auth/logout', follow_redirects=True)
     assert logout_resp.status_code == 200
+
     assert b"You have been signed out." in logout_resp.data
     assert b"Sign In" in logout_resp.data
 

@@ -13,8 +13,10 @@ Key security and tenancy rules:
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
 import threading
+from urllib.parse import urlsplit
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
+
 from werkzeug.security import check_password_hash, generate_password_hash
 from extensions import db
 from app.models import Organization, User
@@ -196,8 +198,31 @@ def register():
     return render_template('auth/register.html', form=form)
 
 
+def is_safe_redirect_url(target):
+    """
+    Ensure the redirect URL is a relative safe path on the same host.
+    Rejects:
+    - None or empty string
+    - Absolute URLs with schemas (e.g., http://evil.com, https://evil.com, javascript:)
+    - Protocol-relative URLs (e.g., //evil.com, /\\evil.com)
+    - URLs containing backslashes or unexpected host targets
+    """
+    if not target:
+        return False
+    # Reject protocol-relative URLs or backslash tricks
+    if target.startswith('//') or target.startswith('/\\') or '\\' in target:
+        return False
+    parsed = urlsplit(target)
+    # Reject any URL with explicit scheme or netloc (domain)
+    if parsed.scheme != '' or parsed.netloc != '':
+        return False
+    # Must start with a single slash
+    return target.startswith('/')
+
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
+
     """
     Authenticate an existing user.
 
@@ -299,19 +324,21 @@ def login():
         )
         flash("Signed in successfully.", "success")
 
-        # 6. Redirect to requested page (with protection against open redirect attacks)
+        # 6. Redirect to requested page (with strict open-redirect protection)
         next_page = request.args.get('next')
-        if not next_page or not next_page.startswith('/'):
+        if not is_safe_redirect_url(next_page):
             next_page = url_for('auth.dashboard')
 
         return redirect(next_page)
 
+
     return render_template('auth/login.html', form=form)
 
 
-@auth_bp.route('/logout', methods=['GET', 'POST'])
+@auth_bp.route('/logout', methods=['POST'])
 @login_required
 def logout():
+
     """
     Log out the currently authenticated user.
     """

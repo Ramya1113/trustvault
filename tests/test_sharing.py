@@ -147,7 +147,7 @@ def test_owner_can_grant_read_and_edit_access(client, setup_sharing_data, app):
         assert "read" in log.detail
 
     # 2. Verify viewer1 can now view and download the document
-    client.get('/auth/logout')
+    client.post('/auth/logout')
     login_as(client, "acme_viewer1", "ViewerPass1234!")
 
     view_resp = client.get(f'/documents/{doc_id}')
@@ -231,7 +231,7 @@ def test_change_permission_from_read_to_edit(client, setup_sharing_data, app):
         assert "acme_viewer1" in log.detail
 
     # Verify viewer1 can now edit the document
-    client.get('/auth/logout')
+    client.post('/auth/logout')
     login_as(client, "acme_viewer1", "ViewerPass1234!")
 
     edit_resp = client.get(f'/documents/{doc_id}/edit')
@@ -264,7 +264,7 @@ def test_revoke_access_takes_effect_immediately(client, setup_sharing_data, app)
     # 1. Confirm viewer1 currently has view access
     login_as(client, "acme_viewer1", "ViewerPass1234!")
     assert client.get(f'/documents/{doc_id}').status_code == 200
-    client.get('/auth/logout')
+    client.post('/auth/logout')
 
     # 2. Owner revokes access
     login_as(client, "acme_owner", "OwnerPass1234!")
@@ -282,7 +282,7 @@ def test_revoke_access_takes_effect_immediately(client, setup_sharing_data, app)
         assert "acme_viewer1" in log.detail
 
     # 3. Viewer1 makes request on the VERY NEXT request -> IMMEDIATELY DENIED (403)
-    client.get('/auth/logout')
+    client.post('/auth/logout')
     login_as(client, "acme_viewer1", "ViewerPass1234!")
 
     # Attempt to view document
@@ -342,7 +342,7 @@ def test_viewer_and_non_owner_access_management_denied(client, setup_sharing_dat
     assert resp_revoke.status_code == 403
 
     # 2. Non-owner (other owner in same org) attempts access management -> 403
-    client.get('/auth/logout')
+    client.post('/auth/logout')
     login_as(client, "acme_other_owner", "OtherOwnerPass1234!")
 
     resp_other_owner = client.get(f'/documents/{doc_id}/sharing/')

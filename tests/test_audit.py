@@ -199,8 +199,9 @@ def test_auth_login_success_and_logout_creates_audit_trail(client, app):
         assert broken_id is None
 
     # 2. Logout
-    logout_resp = client.get('/auth/logout', follow_redirects=True)
+    logout_resp = client.post('/auth/logout', follow_redirects=True)
     assert logout_resp.status_code == 200
+
 
     with app.app_context():
         logs = AuditLog.query.filter_by(org_id=org_id).order_by(AuditLog.id.asc()).all()
