@@ -93,7 +93,7 @@ Each entry includes its commit date, a link to the commit on GitHub, category ta
 - **What I asked:** Display a clear verification banner on the audit log page after an administrator triggers chain verification.
 - **What the tool produced:** The verify route executed `verify_chain()` and redirected to `/admin/audit?verified=1&valid=1`, with the template displaying the success banner based on query parameters.
 - **What was wrong:** The chain verification banner was spoofable; visiting `/admin/audit?verified=1&valid=1` directly in the browser showed "Chain Verification Passed: All entries intact" without running any cryptographic verification.
-- **What I did instead:** Removed URL query parameter trust completely; updated `/admin/audit/verify` to store the verified result in server-side session via `session.pop()`, ensured only one banner renders, and added `test_audit_verify_banner_not_spoofable_via_query_params` in `tests/test_admin.py` to confirm query parameters cannot trigger the banner.
+- **What I did instead:** Removed URL query parameter trust completely; updated `/admin/audit/verify` to store the verified result in the session (`session['verification_status'] = ...`) and retrieved it once in `/admin/audit` via `session.pop('verification_status', None)`, ensured only one banner renders, and added `test_audit_url_parameters_cannot_spoof_verification_banner` in `tests/test_admin.py` to confirm query parameters cannot trigger the banner.
 
 ---
 
@@ -107,7 +107,7 @@ Antigravity generated the code from my step-by-step prompts, and Claude was used
 
 1. **Local App Testing:** Personally tested the local application running on `http://127.0.0.1:5000` as viewer, owner, and admin.
 2. **Audit Tamper Detection:** The automated test modifies an audit row directly in the database and `verify_chain` detects it (I did not edit the database by hand).
-3. **Automated Test Suite:** Ran the automated pytest integration and unit test suite, achieving a 100% pass rate.
+3. 240 tests passing with pytest.
 
 ---
 
@@ -119,6 +119,10 @@ The following checks were personally performed on the live production deployment
 2. **Admin Authentication:** Logged in as the administrator of `KITS GUNTUR` on the live site.
 3. **Audit Trail Inspection:** Opened the Audit Trail in the live admin console.
 4. **Cryptographic Chain Verification:** Clicked "Verify chain" on the live site: result was **OK** (verified on the live PostgreSQL database on 24 Oct 2026).
+5. Logged in as demo_viewer and confirmed there is no Upload button.
+6. Changed the document ID in the URL as demo_viewer and got an error, not the document.
+7. As demo_owner granted a document to demo_viewer and then revoked it, and the viewer lost access.
+8. Logged in as the admin of my second company KITS GUNTUR and confirmed I could not see the demo company's documents.
 
 ---
 
