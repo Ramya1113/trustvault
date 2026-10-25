@@ -22,18 +22,18 @@ Every defence listed below is implemented in the application code and verified b
 - **The Attack**: An attacker attempts to view, download, edit, delete, or manage sharing permissions for previously deleted documents by guessing or supplying their numeric IDs.
 - **The Defence**: All document lookups across both [`app/blueprints/documents.py`](file:///d:/trustvault/app/blueprints/documents.py) and [`app/blueprints/sharing.py`](file:///d:/trustvault/app/blueprints/sharing.py) filter by `deleted_at=None`. If `deleted_at` is set, the application returns HTTP 404 Not Found before processing any action.
 - **File and Function**: [`app/blueprints/documents.py`](file:///d:/trustvault/app/blueprints/documents.py) (`_get_document_or_abort`) and [`app/blueprints/sharing.py`](file:///d:/trustvault/app/blueprints/sharing.py) (`_get_document_for_manage_access`)
-- **Exact Test Name**: `test_soft_deleted_document_returns_404_on_all_endpoints` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py))
+- **Exact Test Name**: `test_soft_deleted_document_returns_404_on_all_endpoints` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_soft_deleted_document_unreachable_by_id_download_edit_sharing` (in [`tests/test_access_invalidation.py`](file:///d:/trustvault/tests/test_access_invalidation.py))
 
 ---
 
 ### 3. Privilege Escalation via Registration and User Form Tampering
-- **The Attack**: An attacker attempts mass-assignment or field injection by adding extra form parameters (such as `role=admin` or `org_id=1`) during self-registration or user creation to acquire administrative rights or infiltrate another organization.
+- **The Attack**: An attacker attempts mass-assignment or field injection by adding extra form parameters (such as `role=admin` or `org_id=1`) during self-registration or user creation to acquire unauthorized rights or infiltrate another organization.
 - **The Defence**:
-  1. [`register()`](file:///d:/trustvault/app/blueprints/auth.py) ignores injected fields, hardcodes `role='owner'`, and creates a new `Organization`.
+  1. [`register()`](file:///d:/trustvault/app/blueprints/auth.py) ignores injected fields, sets `role='admin'`, and creates a new `Organization`.
   2. [`create_user()`](file:///d:/trustvault/app/blueprints/admin.py) strictly binds new user accounts to `org_id=current_user.org_id`.
   3. Strict WTForms definitions only accept defined schema fields.
 - **File and Function**: [`app/blueprints/auth.py`](file:///d:/trustvault/app/blueprints/auth.py) (`register`) and [`app/blueprints/admin.py`](file:///d:/trustvault/app/blueprints/admin.py) (`create_user`)
-- **Exact Test Name**: `test_user_cannot_set_role_or_org_id_via_form_fields` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_register_ignores_spoofed_role_and_org_id_fields` (in [`tests/test_form_tampering_and_enumeration.py`](file:///d:/trustvault/tests/test_form_tampering_and_enumeration.py))
+- **Exact Test Name**: `test_user_cannot_set_role_or_org_id_via_form_fields` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_registration_tampered_role_and_org_ignored` (in [`tests/test_form_tampering_and_enumeration.py`](file:///d:/trustvault/tests/test_form_tampering_and_enumeration.py))
 
 ---
 
@@ -41,14 +41,14 @@ Every defence listed below is implemented in the application code and verified b
 - **The Attack**: An attacker distributes malicious links with crafted `?next=` query parameters (e.g. `https://evil.com`, `//evil.com`, `javascript:...`) to redirect authenticated users to an external phishing portal after successful login.
 - **The Defence**: [`is_safe_redirect_url()`](file:///d:/trustvault/app/blueprints/auth.py) inspects the target redirect path using `urllib.parse.urlsplit`. It rejects any URL with an external host, scheme, leading double slashes (`//`), backslashes, or control characters, falling back to [`documents.list_documents`](file:///d:/trustvault/app/blueprints/documents.py).
 - **File and Function**: [`app/blueprints/auth.py`](file:///d:/trustvault/app/blueprints/auth.py) (`is_safe_redirect_url`, `login`)
-- **Exact Test Name**: `test_login_next_parameter_cannot_redirect_externally` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_external_url_redirects_to_documents_index` (in [`tests/test_login_redirect.py`](file:///d:/trustvault/tests/test_login_redirect.py))
+- **Exact Test Name**: `test_login_next_parameter_cannot_redirect_externally` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_login_rejects_open_redirect_and_defaults_to_dashboard` (in [`tests/test_login_redirect.py`](file:///d:/trustvault/tests/test_login_redirect.py))
 
 ---
 
 ### 5. Stored Cross-Site Scripting (XSS) via Filenames and Metadata
 - **The Attack**: An attacker injects JavaScript payloads into document titles, descriptions, or filenames (e.g. `<script>alert(1)</script>`) to execute arbitrary client script in the browser of other users or administrators viewing list, detail, or audit log pages.
 - **The Defence**: Jinja2 auto-escaping is active across all application templates, converting characters like `<`, `>`, `&`, and `"` into HTML entities (`&lt;script&gt;`). Additionally, a strict Content Security Policy (`default-src 'self'`) prevents execution of inline scripts and untrusted resources.
-- **File and Function**: [`app/templates/documents/list.html`](file:///d:/trustvault/app/templates/documents/list.html), [`app/templates/documents/detail.html`](file:///d:/trustvault/app/templates/documents/detail.html), [`app/templates/admin/audit.html`](file:///d:/trustvault/app/templates/admin/audit.html), and [`app/__init__.py`](file:///d:/trustvault/app/__init__.py) (`add_security_headers`)
+- **File and Function**: [`app/templates/documents/list.html`](file:///d:/trustvault/app/templates/documents/list.html), [`app/templates/documents/detail.html`](file:///d:/trustvault/app/templates/documents/detail.html), [`app/templates/admin/audit.html`](file:///d:/trustvault/app/templates/admin/audit.html), and [`app/__init__.py`](file:///d:/trustvault/app/__init__.py) (`set_security_headers`)
 - **Exact Test Name**: `test_xss_escaping_on_list_detail_and_audit_pages` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py))
 
 ---
@@ -57,7 +57,7 @@ Every defence listed below is implemented in the application code and verified b
 - **The Attack**: An attacker uploads a file with a name containing carriage returns, newlines (`\r\n`), or unescaped quotes to inject rogue HTTP headers (e.g. `Set-Cookie: evil=1`) or escape the `Content-Disposition` attachment filename parameter.
 - **The Defence**: In [`download()`](file:///d:/trustvault/app/blueprints/documents.py), filenames are sanitized via `secure_filename()` and stripped of all `\r`, `\n`, and `"` characters before being formatted into `attachment; filename="<clean_filename>"`.
 - **File and Function**: [`app/blueprints/documents.py`](file:///d:/trustvault/app/blueprints/documents.py) (`download`)
-- **Exact Test Name**: `test_filename_quotes_and_newlines_cannot_inject_headers` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_filename_crlf_header_injection_prevented` (in [`tests/test_download_header_safety.py`](file:///d:/trustvault/tests/test_download_header_safety.py))
+- **Exact Test Name**: `test_filename_quotes_and_newlines_cannot_inject_headers` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_download_sanitizes_quotes_and_crlf_in_content_disposition` (in [`tests/test_download_header_safety.py`](file:///d:/trustvault/tests/test_download_header_safety.py))
 
 ---
 
@@ -73,7 +73,7 @@ Every defence listed below is implemented in the application code and verified b
 - **The Attack**: A viewer who was granted edit access to a document continues editing after the owner revokes the permission.
 - **The Defence**: [`can()`](file:///d:/trustvault/app/permissions.py) and [`require()`](file:///d:/trustvault/app/permissions.py) evaluate the database on every request, verifying `revoked_at is None`. Revoking a grant takes effect immediately on the very next request, returning HTTP 403 Forbidden.
 - **File and Function**: [`app/permissions.py`](file:///d:/trustvault/app/permissions.py) (`can`, `require`) and [`app/blueprints/sharing.py`](file:///d:/trustvault/app/blueprints/sharing.py) (`revoke_access`)
-- **Exact Test Name**: `test_revoked_edit_grant_viewer_cannot_edit_on_next_request` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_revoked_grant_stops_edit_immediately` (in [`tests/test_access_invalidation.py`](file:///d:/trustvault/tests/test_access_invalidation.py))
+- **Exact Test Name**: `test_revoked_edit_grant_viewer_cannot_edit_on_next_request` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_revoked_grant_denies_access` (in [`tests/test_permissions.py`](file:///d:/trustvault/tests/test_permissions.py))
 
 ---
 
@@ -81,7 +81,7 @@ Every defence listed below is implemented in the application code and verified b
 - **The Attack**: An administrator of Tenant A attempts to view, toggle, or modify user accounts, documents, or audit logs belonging to Tenant B.
 - **The Defence**: All queries in [`app/blueprints/admin.py`](file:///d:/trustvault/app/blueprints/admin.py) strictly enforce `filter_by(org_id=current_user.org_id)`. Inter-tenant lookups return HTTP 404 and record a `denied` audit event.
 - **File and Function**: [`app/blueprints/admin.py`](file:///d:/trustvault/app/blueprints/admin.py) (`audit_log`, `users_list`, `documents_list`, `toggle_user_status`, `change_user_role`)
-- **Exact Test Name**: `test_cross_tenant_admin_isolation_documents_users_audit` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_admin_cannot_see_other_org_users` (in [`tests/test_admin.py`](file:///d:/trustvault/tests/test_admin.py))
+- **Exact Test Name**: `test_cross_tenant_admin_isolation_documents_users_audit` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_admin_cannot_manage_cross_tenant_users` (in [`tests/test_admin.py`](file:///d:/trustvault/tests/test_admin.py))
 
 ---
 
@@ -93,7 +93,7 @@ Every defence listed below is implemented in the application code and verified b
   - [`app/blueprints/documents.py`](file:///d:/trustvault/app/blueprints/documents.py) (`delete`)
   - [`app/blueprints/sharing.py`](file:///d:/trustvault/app/blueprints/sharing.py) (`grant_access`, `change_permission`, `revoke_access`)
   - [`app/blueprints/admin.py`](file:///d:/trustvault/app/blueprints/admin.py) (`create_user`, `toggle_user_status`, `change_user_role`, `verify_audit_chain`)
-- **Exact Test Name**: `test_every_state_changing_route_rejects_get` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)) and `test_logout_post_with_csrf_succeeds` (in [`tests/test_state_changing_csrf.py`](file:///d:/trustvault/tests/test_state_changing_csrf.py))
+- **Exact Test Name**: `test_every_state_changing_route_rejects_get` (in [`tests/test_threat_defences.py`](file:///d:/trustvault/tests/test_threat_defences.py)), `test_logout_rejects_get` (in [`tests/test_state_changing_csrf.py`](file:///d:/trustvault/tests/test_state_changing_csrf.py)), and `test_csrf_required_for_logout` (in [`tests/test_state_changing_csrf.py`](file:///d:/trustvault/tests/test_state_changing_csrf.py))
 
 ---
 
@@ -112,7 +112,7 @@ Every defence listed below is implemented in the application code and verified b
 - **The Attack**: An attacker tricks an administrator into believing the audit chain passed verification by appending spoofed query parameters like `?verified=1&valid=1` to the URL.
 - **The Defence**: Chain verification runs exclusively via server-side POST ([`verify_audit_chain()`](file:///d:/trustvault/app/blueprints/admin.py)). The result is saved in the server-managed session (`session['verification_status']`) and popped on display. Query parameters in the URL are ignored.
 - **File and Function**: [`app/blueprints/admin.py`](file:///d:/trustvault/app/blueprints/admin.py) (`audit_log`, `verify_audit_chain`)
-- **Exact Test Name**: `test_audit_page_ignores_spoofed_url_query_parameters` (in [`tests/test_admin.py`](file:///d:/trustvault/tests/test_admin.py)) and `test_audit_verify_post_sets_session_and_renders_banner` (in [`tests/test_admin.py`](file:///d:/trustvault/tests/test_admin.py))
+- **Exact Test Name**: `test_audit_url_parameters_cannot_spoof_verification_banner` (in [`tests/test_admin.py`](file:///d:/trustvault/tests/test_admin.py)) and `test_audit_chain_verification_intact_and_tampered` (in [`tests/test_admin.py`](file:///d:/trustvault/tests/test_admin.py))
 
 ---
 
@@ -130,19 +130,19 @@ Every defence listed below is implemented in the application code and verified b
   1. For non-existent usernames, [`login()`](file:///d:/trustvault/app/blueprints/auth.py) executes a dummy password hash check (`_DUMMY_PASSWORD_HASH`) to equalize server response timing with valid users.
   2. The in-memory lockout tracker locks authentication for 10 minutes after 5 consecutive failed attempts, returning HTTP 429 Too Many Requests.
 - **File and Function**: [`app/blueprints/auth.py`](file:///d:/trustvault/app/blueprints/auth.py) (`login`, `_record_failed_attempt`, `_is_locked_out`)
-- **Exact Test Name**: `test_unknown_username_runs_dummy_password_hash_check` (in [`tests/test_auth_unknown_login.py`](file:///d:/trustvault/tests/test_auth_unknown_login.py)) and `test_rate_limit_lockout_after_five_failed_logins` (in [`tests/test_auth.py`](file:///d:/trustvault/tests/test_auth.py))
+- **Exact Test Name**: `test_unknown_username_runs_dummy_password_hash_check` (in [`tests/test_auth_unknown_login.py`](file:///d:/trustvault/tests/test_auth_unknown_login.py)) and `test_login_lockout_after_five_failed_attempts` (in [`tests/test_auth.py`](file:///d:/trustvault/tests/test_auth.py))
 
 ---
 
 ### 15. Clickjacking and MIME Confusion Attacks
 - **The Attack**: An attacker embeds TrustVault in a transparent iframe to steal user interactions (clickjacking) or relies on browsers sniffing file types to execute script in place of images/documents.
-- **The Defence**: Global response headers injected via [`add_security_headers()`](file:///d:/trustvault/app/__init__.py):
+- **The Defence**: Global response headers injected via [`set_security_headers()`](file:///d:/trustvault/app/__init__.py):
   - `X-Frame-Options: DENY`
   - `X-Content-Type-Options: nosniff`
   - `Content-Security-Policy: default-src 'self'`
   - `Referrer-Policy: strict-origin-when-cross-origin`
-- **File and Function**: [`app/__init__.py`](file:///d:/trustvault/app/__init__.py) (`add_security_headers`)
-- **Exact Test Name**: `test_security_headers_present_on_all_responses` (in [`tests/test_security_headers.py`](file:///d:/trustvault/tests/test_security_headers.py))
+- **File and Function**: [`app/__init__.py`](file:///d:/trustvault/app/__init__.py) (`set_security_headers`)
+- **Exact Test Name**: `test_security_headers_on_standard_endpoint` (in [`tests/test_security_headers.py`](file:///d:/trustvault/tests/test_security_headers.py))
 
 ---
 
@@ -166,7 +166,7 @@ Every defence listed below is implemented in the application code and verified b
 
 The following items are known limitations and architectural boundaries where no active defence or automated test exists in the codebase:
 
-1. **In-Memory Lockout Resets on Server Restart**: The failed login lockout tracker (`_LOGIN_ATTEMPTS`) is stored in Python process memory. Restarting or redeploying the web server resets the lockout counter, allowing an attacker to resume password attempts immediately.
+1. **In-Memory Lockout Resets on Server Restart**: The failed login lockout tracker (`_failed_login_attempts`) is stored in Python process memory. Restarting or redeploying the web server resets the lockout counter, allowing an attacker to resume password attempts immediately.
 2. **One-Worker Lock Scope for Audit Trail**: The audit lock (`_get_org_lock`) uses an in-memory `threading.Lock`. While Gunicorn is pinned to 1 worker process in production (`--workers 1 --threads 4`), any multi-worker or multi-container deployment would require database-level locking (`SELECT ... FOR UPDATE` or advisory locks) or an external sequencer to prevent race conditions across separate OS processes.
 3. **Full Audit Chain Regeneration by a DBA**: An attacker with direct database write credentials (e.g. root PostgreSQL/SQLite access) can alter past audit rows and recalculate all downstream SHA-256 hashes. TrustVault does not publish external cryptographic checkpoints (such as external write-once storage, public ledger anchoring, or digital timestamping).
 4. **No Email Verification**: Account registration does not send verification emails or confirm mailbox ownership. Users can register organizations using arbitrary or unverified email addresses.
